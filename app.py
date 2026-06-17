@@ -30,7 +30,7 @@ if "autenticado" not in st.session_state:
 if "usuario_logado" not in st.session_state:
     st.session_state.usuario_logado = ""
 
-# Tenta recuperar o login salvo no navegador da máquina
+# Tenta recuperar o login保存 no navegador da máquina
 if not st.session_state.autenticado and controller:
     try:
         cookie_login = controller.get("paroquia_sf_auth")
@@ -66,17 +66,4 @@ if not st.session_state.autenticado:
                 
                 # Se o usuário marcou para lembrar, grava o Cookie no navegador
                 if lembrar_acesso and controller:
-                    validade = datetime.datetime.now() + datetime.timedelta(days=30)
-                    controller.set("paroquia_sf_auth", "token_seguro_sf_2026", expires=validade)
-                    controller.set("paroquia_sf_user", usuario_input, expires=validade)
-                st.rerun()
-            else:
-                st.error("❌ Usuário ou senha incorretos! Tente novamente.")
-                
-    st.stop()
-
-# =========================================================================
-# ⛪ DESIGN VETORIAL E ESTILIZAÇÕES CUSTOMIZADAS (CSS)
-# =========================================================================
-IMAGEM_BANCO_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="45" height="45" style="vertical-align: middle; margin-right: 10px;"><rect x="15" y="75" width="70" height="12" rx="2" fill="#003366"/><polygon points="50,15 10,40 90,40" fill="#004B87"/><rect x="25" y="40" width="8" height="35" fill="#006699"/><rect x="46" y="40" width="8" height="35" fill="#006699"/><rect x="67" y="40" width="8" height="35" fill="#006699"/><circle cx="50" cy="28" r="4" fill="#FFD700"/></svg>"""
-IMAGEM_IGREJA_SVG = """<svg xmlns="
+                    validade = datetime.datetime.now() + datetime.timedelta(days=3
