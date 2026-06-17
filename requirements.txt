@@ -1,0 +1,4 @@
+pypdf
+pandas
+openpyxl
+streamlit-cookies-controller
