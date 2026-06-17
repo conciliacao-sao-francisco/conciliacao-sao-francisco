@@ -288,8 +288,10 @@ if u_extrato and u_sistema:
                     v_real = row['Valor']
                     v_abs = abs(v_real)
                     
+                    # Identificador visual de ENTRADA (C) e SAÍDA (D)
                     icone_direcao = "🟢 (C)" if v_real >= 0 else "🔴 (D)"
                     
+                    # Inteligência Pro: Descobre se é exato ou taxa (Baseado no valor absoluto)
                     tem_exato = v_abs in valores_s_abs
                     tem_taxa = any(sao_valores_compativeis(v_abs, v_s) for v_s in valores_s_abs)
                     
@@ -297,10 +299,12 @@ if u_extrato and u_sistema:
                     chk_val = (tem_exato or tem_taxa) or st.session_state[f"marcar_{data_selecionada}"]
                     
                     texto_limpo = f"{row['Histórico']} {row['Detalhes']}".strip()
+                    # Rótulo atualizado com o sinal visual C/D
                     label = f"{icone_direcao} R$ {v_abs:,.2f} | {texto_limpo[:40]} {tag}"
                     
                     if st.checkbox(label, key=f"b_{row['id_banco']}", value=chk_val):
                         selecionados_banco.append(row)
+                        # Na soma do painel de diferença, continuamos usando o valor absoluto para bater os lados
                         soma_banco_atual += v_abs
                 
                 container_b.markdown(f'<div class="caixa-calculo">💰 Soma Selecionada: R$ {soma_banco_atual:,.2f}</div>', unsafe_allow_html=True)
@@ -317,6 +321,7 @@ if u_extrato and u_sistema:
                     v_real = row['Valor']
                     v_abs = abs(v_real)
                     
+                    # Identificador visual de ENTRADA (C) e SAÍDA (D)
                     icone_direcao = "🟢 (C)" if v_real >= 0 else "🔴 (D)"
                     
                     tem_exato = v_abs in valores_b_abs
@@ -325,6 +330,7 @@ if u_extrato and u_sistema:
                     tag = " ⭐ [EXATO]" if tem_exato else (" 💸 [AJUSTE TAXA]" if tem_taxa else "")
                     chk_val = (tem_exato or tem_taxa) or st.session_state[f"marcar_{data_selecionada}"]
                     
+                    # Rótulo atualizado com o sinal visual C/D
                     label = f"{icone_direcao} R$ {v_abs:,.2f} | {row['Descrição'][:40]} {tag}"
                     
                     if st.checkbox(label, key=f"t_{row['id_theos']}", value=chk_val):
