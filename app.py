@@ -66,4 +66,56 @@ if not st.session_state.autenticado:
     st.stop()
 
 # =========================================================================
+# ESTILIZAÇÕES E FUNÇÕES DE PROCESSAMENTO
+# =========================================================================
+st.markdown("""
+    <style>
+    .caixa-calculo { background-color: #e3f2fd; padding: 10px; border-radius: 6px; font-weight: bold; color: #0d47a1; }
+    .caixa-calculo-igreja { background-color: #efebe9; padding: 10px; border-radius: 6px; font-weight: bold; color: #4e342e; }
+    </style>
+""", unsafe_allow_html=True)
+
+def converter_valor_extrato(val_str):
+    if pd.isna(val_str): return 0.0
+    val_str = str(val_str).strip().upper()
+    eh_debito = 'D' in val_str or '-' in val_str
+    apenas_numeros = re.sub(r'[^\d,,.]', '', val_str).replace('.', '').replace(',', '.')
+    try:
+        valor = float(apenas_numeros)
+        return -valor if eh_debito else valor
+    except: return 0.0
+
+def extrair_detalhe_limpo(historico, detalhes):
+    hist_u = str(historico).upper().strip()
+    tipo = "🔹 OUTROS"
+    if "PIX" in hist_u: tipo = "🟢 PIX"
+    elif "SIPAG" in hist_u or "COMPRAS" in hist_u: tipo = "💳 SIPAG / CARTÃO"
+    elif "TARIFA" in hist_u: tipo = "🔴 TARIFA"
+    return tipo, str(detalhes).upper().strip()
+
+# [AQUI ENTRA O RESTANTE DAS SUAS FUNÇÕES ORIGINAIS: processar_extrato_sicoob, extrair_dados_pdf_poupanca, etc.]
+
+# =========================================================================
+# INTERFACE PRINCIPAL
+# =========================================================================
+st.title("⛪ Sistema de Conciliação")
+conta_ativa = st.selectbox("🏦 Conta:", ["Conta 161 - Geral", "Conta 140 - Dízimo"])
+
+# --- LÓGICA DE EXIBIÇÃO NA ABA DE CONCILIAÇÃO ---
+# Dentro do seu loop de exibição:
+# ...
+# for _, row in df_banco_tela.iterrows():
+#     v_abs = abs(row['Valor'])
+#     
+#     # VERIFICAÇÃO INTELIGENTE:
+#     tem_match = False
+#     for v_sist in valores_sistema_abs:
+#         if sao_valores_compativeis(v_abs, v_sist):
+#             tem_match = True
+#             break
 #
+#     tag = " 💸 [AJUSTE TAXA]" if tem_match else ""
+#     label = f"{row['Tipo']} | R$ {v_abs:,.2f} | {row['Histórico'][:30]}{tag}"
+#     
+#     if st.checkbox(label, key=f"b_{row['id_banco']}", value=tem_match):
+#         # ... lógica de seleção ...
