@@ -47,12 +47,15 @@ if not st.session_state.autenticado:
     col_log1, col_log2, col_log3 = st.columns([1, 2, 1])
     
     with col_log2:
-        st.markdown("""
-            <div style="background-color: #f8f9fa; padding: 30px; border-radius: 12px; border: 1px solid #dee2e6; box-shadow: 0px 4px 10px rgba(0,0,0,0.05);">
-                <h2 style="text-align: center; color: #003366; margin-bottom: 5px;">⛪ Paróquia São Francisco de Assis</h2>
-                <p style="text-align: center; color: #6c757d; font-size: 14px; margin-bottom: 25px;">Acesso Restrito ao Painel de Conciliação Financeira</p>
-            </div>
-        """, unsafe_allow_html=True)
+        html_login = (
+            '<div style="background-color: #f8f9fa; padding: 30px; border-radius: 12px; '
+            'border: 1px solid #dee2e6; box-shadow: 0px 4px 10px rgba(0,0,0,0.05);">'
+            '<h2 style="text-align: center; color: #003366; margin-bottom: 5px;">⛪ Paróquia São Francisco de Assis</h2>'
+            '<p style="text-align: center; color: #6c757d; font-size: 14px; margin-bottom: 25px;">'
+            'Acesso Restrito ao Painel de Conciliação Financeira</p>'
+            '</div>'
+        )
+        st.markdown(html_login, unsafe_allow_html=True)
         
         usuario_input = st.text_input("👤 Nome de Usuário:")
         senha_input = st.text_input("🔑 Senha de Acesso:", type="password")
@@ -78,19 +81,20 @@ if not st.session_state.autenticado:
 # =========================================================================
 # ESTILIZAÇÕES CUSTOMIZADAS (CSS)
 # =========================================================================
-st.markdown("""
-    <style>
-    .block-container { padding-top: 1.5rem; }
-    div[data-testid="stMetricValue"] { font-size: 24px !important; font-weight: bold; }
-    .stTabs [data-baseweb="tab"] { font-size: 16px; font-weight: 600; padding: 10px 20px; }
-    thead th { background-color: #f0f2f6 !important; color: #31333F !important; font-weight: bold !important; }
-    .titulo-coluna { display: flex; align-items: center; background-color: #f8f9fa; padding: 12px; border-radius: 8px; border-left: 5px solid #004B87; margin-bottom: 5px; }
-    .titulo-coluna-igreja { display: flex; align-items: center; background-color: #fdfaf6; padding: 12px; border-radius: 8px; border-left: 5px solid #8B4513; margin-bottom: 5px; }
-    .caixa-calculo { background-color: #e3f2fd; padding: 6px 12px; border-radius: 6px; font-weight: bold; color: #0d47a1; margin-bottom: 15px; font-size: 14px; display: inline-block; width: 100%; }
-    .caixa-calculo-igreja { background-color: #efebe9; padding: 6px 12px; border-radius: 6px; font-weight: bold; color: #4e342e; margin-bottom: 15px; font-size: 14px; display: inline-block; width: 100%; }
-    .texto-header-col { margin-left: 10px; font-size: 16px; font-weight: bold; }
-    </style>
-""", unsafe_allow_html=True)
+estilo_css = (
+    "<style>"
+    ".block-container { padding-top: 1.5rem; }"
+    'div[data-testid="stMetricValue"] { font-size: 24px !important; font-weight: bold; }'
+    '.stTabs [data-baseweb="tab"] { font-size: 16px; font-weight: 600; padding: 10px 20px; }'
+    "thead th { background-color: #f0f2f6 !important; color: #31333F !important; font-weight: bold !important; }"
+    ".titulo-coluna { display: flex; align-items: center; background-color: #f8f9fa; padding: 12px; border-radius: 8px; border-left: 5px solid #004B87; margin-bottom: 5px; }"
+    ".titulo-coluna-igreja { display: flex; align-items: center; background-color: #fdfaf6; padding: 12px; border-radius: 8px; border-left: 5px solid #8B4513; margin-bottom: 5px; }"
+    ".caixa-calculo { background-color: #e3f2fd; padding: 6px 12px; border-radius: 6px; font-weight: bold; color: #0d47a1; margin-bottom: 15px; font-size: 14px; display: inline-block; width: 100%; }"
+    ".caixa-calculo-igreja { background-color: #efebe9; padding: 6px 12px; border-radius: 6px; font-weight: bold; color: #4e342e; margin-bottom: 15px; font-size: 14px; display: inline-block; width: 100%; }"
+    ".texto-header-col { margin-left: 10px; font-size: 16px; font-weight: bold; }"
+    "</style>"
+)
+st.markdown(estilo_css, unsafe_allow_html=True)
 
 st.title("⛪ Sistema Integrado de Conciliação - Paróquia São Francisco de Assis")
 
@@ -189,7 +193,7 @@ def processar_extrato_sicoob(arquivo_upload):
         if "SALDO" in historico: continue
         
         if pd.notna(data_orig) and '/' in str(data_orig):
-            if linha_mestre: dados_banco_brutos.append(linha_mestre)
+            if inline_mestre := linha_mestre: dados_banco_brutos.append(inline_mestre)
             linha_mestre = {
                 'Data': pd.to_datetime(str(data_orig).strip(), dayfirst=True).strftime('%d/%m/%Y'),
                 'Documento': str(row.iloc[1]).strip() if pd.notna(row.iloc[1]) else '',
@@ -221,7 +225,7 @@ def extrair_dados_pdf_poupanca(arquivo_pdf):
             if match_data and "SALDO" not in linha_u:
                 dt_enc = match_data.group(1)
                 tipo = "📈 RENDIMENTO POUPANÇA" if any(x in linha_u for x in ["JUROS", "REND", "SELIC", "CRED.REND"]) else "🔹 OFERTA / PIX"
-                partes = linha_u.split()
+                partes = inline_u = linha_u.split()
                 if len(partes) >= 3:
                     v_num = converter_valor_extrato(partes[-1])
                     if v_num == 0.0 and len(partes) > 1:
@@ -410,7 +414,6 @@ else:  # CONTAS CORRENTES (161 e 140)
             info_saldo = mapa_saldos.get(data_selecionada, {'Anterior': 0.0, 'Final': 0.0})
             df_banco_dia = df_banco_orig[df_banco_orig['Data'] == data_selecionada]
             
-            # ---> AQUI ESTÁ A LINHA CORRIGIDA DO SEU ERRO <---
             fluxo_dia = df_banco_dia['Valor'].sum()
             
             st.markdown("---")
@@ -422,37 +425,49 @@ else:  # CONTAS CORRENTES (161 e 140)
             aba_conciliacao, aba_historico = st.tabs(["🔄 Esteira de Conciliação Diária", "📋 Histórico de Fechamento"])
 
             with aba_conciliacao:
-                st.markdown("#### 🔍 Filtro Tático Operacional")
-                tipos_disponiveis = sorted(list(set(df_banco_dia['Tipo'].unique()).union(set(df_sistema_pendente[df_sistema_pendente['Data'] == data_selecionada]['Tipo'].unique()))))
-                tipo_filtro = st.selectbox("🎯 Filtrar tela por Tipo de Transação:", ["Todos"] + tipos_disponiveis)
-
-                st.markdown(f"#### Lançamentos pendentes em: `{data_selecionada}`")
+                st.markdown(f"#### Lançamentos em: `{data_selecionada}`")
                 
                 df_banco_tela = df_banco_dia[~df_banco_dia['id_banco'].isin(st.session_state[chave_banco])]
                 df_sistema_tela = df_sistema_pendente[df_sistema_pendente['Data'] == data_selecionada]
 
-                if tipo_filtro != "Todos":
-                    df_banco_tela = df_banco_tela[df_banco_tela['Tipo'] == tipo_filtro]
-                    df_sistema_tela = df_sistema_tela[df_sistema_tela['Tipo'] == tipo_filtro]
+                # --- FILTROS SEPARADOS POR ORIGEM ---
+                tipos_banco = sorted(list(df_banco_tela['Tipo'].unique()))
+                tipos_sistema = sorted(list(df_sistema_tela['Tipo'].unique()))
+                
+                col_f1, col_f2 = st.columns(2)
+                with col_f1:
+                    filtro_banco = st.selectbox("🎯 Filtrar Extrato Sicoob por Tipo:", ["Todos"] + tipos_banco, key=f"f_b_{data_selecionada}")
+                with col_f2:
+                    filtro_sistema = st.selectbox("🎯 Filtrar Sistema por Tipo:", ["Todos"] + tipos_sistema, key=f"f_s_{data_selecionada}")
+
+                if filtro_banco != "Todos":
+                    df_banco_tela = df_banco_tela[df_banco_tela['Tipo'] == filtro_banco]
+                if filtro_sistema != "Todos":
+                    df_sistema_tela = df_sistema_tela[df_sistema_tela['Tipo'] == filtro_sistema]
 
                 valores_banco_abs = df_banco_tela['Valor'].abs().tolist()
                 valores_sistema_abs = df_sistema_tela['Valor'].abs().tolist() if not df_sistema_tela.empty else []
 
-                if f"marcar_todos_b_{data_selecionada}_{tipo_filtro}" not in st.session_state:
-                    st.session_state[f"marcar_todos_b_{data_selecionada}_{tipo_filtro}"] = False
-                if f"marcar_todos_s_{data_selecionada}_{tipo_filtro}" not in st.session_state:
-                    st.session_state[f"marcar_todos_s_{data_selecionada}_{tipo_filtro}"] = False
+                if f"marcar_todos_b_{data_selecionada}_{filtro_banco}" not in st.session_state:
+                    st.session_state[f"marcar_todos_b_{data_selecionada}_{filtro_banco}"] = False
+                if f"marcar_todos_s_{data_selecionada}_{filtro_sistema}" not in st.session_state:
+                    st.session_state[f"marcar_todos_s_{data_selecionada}_{filtro_sistema}"] = False
 
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    st.markdown('<div class="titulo-coluna"><span style="font-size:24px;">🏦</span><div class="texto-header-col">Extrato Sicoob<br><span style="font-size:12px; color:#666; font-weight:normal;">' + str(len(df_banco_tela)) + ' exibidos neste tipo</span></div></div>', unsafe_allow_html=True)
+                    texto_banco_header = f'<div class="titulo-coluna"><span style="font-size:24px;">🏦</span><div class="texto-header-col">Extrato Sicoob<br><span style="font-size:12px; color:#666; font-weight:normal;">{len(df_banco_tela)} exibidos neste filtro</span></div></div>'
+                    st.markdown(texto_banco_header, unsafe_allow_html=True)
+                    
+                    # --- SALDO DO EXTRATO DO DIA (VISÍVEL) ---
+                    saldo_banco_filtrado = df_banco_tela['Valor'].sum()
+                    st.info(f"📊 **Saldo do Extrato Filtrado:** R$ {saldo_banco_filtrado:,.2f}")
                     
                     container_calculo_banco = st.empty()
                     
                     if not df_banco_tela.empty:
-                        if st.button("⭐ Selecionar Match Automático (Banco)", key=f"btn_b_{data_selecionada}_{tipo_filtro}"):
-                            st.session_state[f"marcar_todos_b_{data_selecionada}_{tipo_filtro}"] = True
+                        if st.button("⭐ Selecionar Match Automático (Banco)", key=f"btn_b_{data_selecionada}_{filtro_banco}"):
+                            st.session_state[f"marcar_todos_b_{data_selecionada}_{filtro_banco}"] = True
                             st.rerun()
 
                     selecionados_banco = []
@@ -464,7 +479,7 @@ else:  # CONTAS CORRENTES (161 e 140)
                     for _, row in df_banco_tela.iterrows():
                         v_abs = abs(row['Valor'])
                         tem_match = v_abs in valores_sistema_abs
-                        valor_padrao_chk = tem_match or st.session_state[f"marcar_todos_b_{data_selecionada}_{tipo_filtro}"]
+                        valor_padrao_chk = tem_match or st.session_state[f"marcar_todos_b_{data_selecionada}_{filtro_banco}"]
                         tag_match = " ⭐ [BATE]" if tem_match else ""
                         label = f"{row.get('Tipo', '🔹 OUTROS')} | R$ {v_abs:,.2f} | {row.get('Detalhe_Limpo', row['Histórico'])[:35]}{tag_match}"
                         
@@ -476,13 +491,18 @@ else:  # CONTAS CORRENTES (161 e 140)
 
                 with col2:
                     lbl_sist = "💻 Paróquia / Eclesial (Dízimos)" if "140" in conta_ativa else "💻 Paróquia / Boletim Theos"
-                    st.markdown('<div class="titulo-coluna-igreja"><span style="font-size:24px;">⛪</span><div class="texto-header-col">' + lbl_sist + '<br><span style="font-size:12px; color:#666; font-weight:normal;">' + str(len(df_sistema_tela)) + ' exibidos neste tipo</span></div></div>', unsafe_allow_html=True)
+                    texto_sistema_header = f'<div class="titulo-coluna-igreja"><span style="font-size:24px;">⛪</span><div class="texto-header-col">{lbl_sist}<br><span style="font-size:12px; color:#666; font-weight:normal;">{len(df_sistema_tela)} exibidos neste filtro</span></div></div>'
+                    st.markdown(texto_sistema_header, unsafe_allow_html=True)
+                    
+                    # --- SALDO DO BOLETIM DO DIA (VISÍVEL) ---
+                    saldo_sistema_filtrado = df_sistema_tela['Valor'].sum()
+                    st.info(f"📊 **Saldo do Boletim Filtrado:** R$ {saldo_sistema_filtrado:,.2f}")
                     
                     container_calculo_sistema = st.empty()
                     
                     if not df_sistema_tela.empty:
-                        if st.button("⭐ Selecionar Match Automático (Sistema)", key=f"btn_s_{data_selecionada}_{tipo_filtro}"):
-                            st.session_state[f"marcar_todos_s_{data_selecionada}_{tipo_filtro}"] = True
+                        if st.button("⭐ Selecionar Match Automático (Sistema)", key=f"btn_s_{data_selecionada}_{filtro_sistema}"):
+                            st.session_state[f"marcar_todos_s_{data_selecionada}_{filtro_sistema}"] = True
                             st.rerun()
 
                     selecionados_sistema = []
@@ -494,7 +514,7 @@ else:  # CONTAS CORRENTES (161 e 140)
                     for _, row in df_sistema_tela.iterrows():
                         v_abs = abs(row['Valor'])
                         tem_match = v_abs in valores_banco_abs
-                        valor_padrao_chk = tem_match or st.session_state[f"marcar_todos_s_{data_selecionada}_{tipo_filtro}"]
+                        valor_padrao_chk = tem_match or st.session_state[f"marcar_todos_s_{data_selecionada}_{filtro_sistema}"]
                         tag_match = " ⭐ [BATE]" if tem_match else ""
                         label = f"{row.get('Tipo', '🔹 OUTROS')} | R$ {v_abs:,.2f} | {row['Descrição'][:35]}{tag_match}"
                         
@@ -516,8 +536,8 @@ else:  # CONTAS CORRENTES (161 e 140)
                             st.session_state[chave_sistema].append(t['id_theos'])
                             passo_atual['theos_ids'].append(t['id_theos'])
                             st.session_state.historico_cortes.append({'Conta': conta_ativa.split('-')[0], 'Origem': 'Sistema', 'Data': data_selecionada, 'Descrição': t['Descrição'], 'Valor': t['Valor']})
-                        st.session_state[f"marcar_todos_b_{data_selecionada}_{tipo_filtro}"] = False
-                        st.session_state[f"marcar_todos_s_{data_selecionada}_{tipo_filtro}"] = False
+                        st.session_state[f"marcar_todos_b_{data_selecionada}_{filtro_banco}"] = False
+                        st.session_state[f"marcar_todos_s_{data_selecionada}_{filtro_sistema}"] = False
                         st.session_state.historico_passos.append(passo_atual)
                         st.toast("Baixa efetuada com sucesso!", icon="✅")
                         st.rerun()
