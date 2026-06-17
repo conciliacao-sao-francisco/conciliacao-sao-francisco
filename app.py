@@ -14,6 +14,8 @@ st.set_page_config(page_title="Conciliador Multi-Contas São Francisco", layout=
 # =========================================================================
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
+if "usuario_logado" not in st.session_state:
+    st.session_state.usuario_logado = ""
 
 if not st.session_state.autenticado:
     st.markdown("<br><br>", unsafe_allow_html=True)
@@ -27,19 +29,20 @@ if not st.session_state.autenticado:
             </div>
         """, unsafe_allow_html=True)
         
-        usuario = st.text_input("👤 Nome de Usuário:")
-        senha = st.text_input("🔑 Senha de Acesso:", type="password")
+        usuario_input = st.text_input("👤 Nome de Usuário:")
+        senha_input = st.text_input("🔑 Senha de Acesso:", type="password")
         
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("🔓 Entrar no Sistema", type="primary", use_container_width=True):
-            # DEFINA ABAIXO O USUÁRIO E A SENHA QUE DESEJAR PARA A PARÓQUIA:
-            if usuario == "secretaria" and senha == "sf@2026":
+            # CREDENCIAIS OFICIAIS DA PARÓQUIA:
+            if usuario_input == "secretaria" and senha_input == "sf@2026":
                 st.session_state.autenticado = True
+                st.session_state.usuario_logado = usuario_input
                 st.rerun()
             else:
                 st.error("❌ Usuário ou senha incorretos! Tente novamente.")
                 
-    st.stop() # Bloqueia completamente a execução do resto do código se não estiver logado
+    st.stop() # Bloqueia completamente a execução se não estiver logado
 
 # =========================================================================
 # ⛪ O SISTEMA SÓ COMEÇA DAQUI PARA BAIXO SE ESTIVER AUTENTICADO
@@ -65,12 +68,13 @@ st.markdown("""
 st.title("⛪ Sistema Integrado de Conciliação - Paróquia São Francisco de Assis")
 st.caption("Painel Avançado Multi-Contas protegido por criptografia de sessão local.")
 
-# Botão de Logoff na barra lateral
+# Botão de Logoff na barra lateral (Corrigido e Seguro)
 with st.sidebar:
     st.markdown("### 👤 Usuário Ativo")
-    st.info(f"Conectado como: **{usuario}**")
+    st.info(f"Conectado como: **{st.session_state.usuario_logado}**")
     if st.button("🔒 Sair do Sistema (Logoff)", use_container_width=True):
         st.session_state.autenticado = False
+        st.session_state.usuario_logado = ""
         st.rerun()
     st.markdown("---")
 
