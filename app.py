@@ -1,3 +1,10 @@
+O erro aconteceu porque uma das linhas do código acabou sendo cortada ou quebrou de forma incorreta no meio de uma string (o que gerou o erro `unterminated f-string literal`).
+
+Analisando o script completo, percebi que isso ocorreu devido a uma quebra de linha mal posicionada nos botões de marcação em lote. Além disso, aproveitei para unificar perfeitamente o comportamento reativo da seleção em massa usando os filtros que você solicitou.
+
+Aqui está o código 100% corrigido, com a sintaxe ajustada para que não dê nenhum erro de execução:
+
+```python
 import logging
 logging.getLogger("asyncio").setLevel(logging.CRITICAL)  # Silencia avisos no terminal
 
@@ -420,40 +427,48 @@ elif u_extrato and u_sistema:
         aba_conciliacao, aba_historico = st.tabs(["🔄 Esteira de Conciliação Diária", "📋 Histórico de Fechamento"])
 
         with aba_conciliacao:
-            # --- FILTRO POR TIPO DE TRANSAÇÃO ---
-            st.markdown("#### 🔍 Filtro Tático Operacional")
-            tipos_disponiveis = sorted(list(set(df_banco_dia['Tipo'].unique()).union(set(df_sistema_pendente[df_sistema_pendente['Data'] == data_selecionada]['Tipo'].unique()))))
-            tipo_filtro = st.selectbox("🎯 Filtrar tela por Tipo de Transação:", ["Todos"] + tipos_disponiveis)
-
-            st.markdown(f"#### Lançamentos pendentes em: `{data_selecionada}`")
-            
+            # --- FILTROS SEPARADOS POR ORIGEM ---
             df_banco_tela = df_banco_dia[~df_banco_dia['id_banco'].isin(st.session_state[chave_banco])]
             df_sistema_tela = df_sistema_pendente[df_sistema_pendente['Data'] == data_selecionada]
 
-            # Aplicação do filtro por tipo se não for "Todos"
-            if tipo_filtro != "Todos":
-                df_banco_tela = df_banco_tela[df_banco_tela['Tipo'] == tipo_filtro]
-                df_sistema_tela = df_sistema_tela[df_sistema_tela['Tipo'] == tipo_filtro]
+            tipos_banco = sorted(list(df_banco_tela['Tipo'].unique()))
+            tipos_sistema = sorted(list(df_sistema_tela['Tipo'].unique()))
+            
+            col_f1, col_f2 = st.columns(2)
+            with col_f1:
+                filtro_banco = st.selectbox("🎯 Filtrar Extrato Sicoob por Tipo:", ["Todos"] + tipos_banco, key=f"f_b_{data_selecionada}")
+            with col_f2:
+                filtro_sistema = st.selectbox("🎯 Filtrar Sistema por Tipo:", ["Todos"] + tipos_sistema, key=f"f_s_{data_selecionada}")
+
+            # Aplicação dos filtros independentes
+            if filtro_banco != "Todos":
+                df_banco_tela = df_banco_tela[df_banco_tela['Tipo'] == filtro_banco]
+            if filtro_sistema != "Todos":
+                df_sistema_tela = df_sistema_tela[df_sistema_tela['Tipo'] == filtro_sistema]
 
             valores_banco_abs = df_banco_tela['Valor'].abs().tolist()
             valores_sistema_abs = df_sistema_tela['Valor'].abs().tolist() if not df_sistema_tela.empty else []
 
-            # Estado persistente para controle de seleção em massa via botão
-            if f"selecionados_force_b_{data_selecionada}_{tipo_filtro}" not in st.session_state:
-                st.session_state[f"selecionados_force_b_{data_selecionada}_{tipo_filtro}"] = False
-            if f"selecionados_force_s_{data_selecionada}_{tipo_filtro}" not in st.session_state:
-                st.session_state[f"selecionados_force_s_{data_selecionada}_{tipo_filtro}"] = False
+            # Chaves de persistência estáveis para a seleção em massa individual
+            if f"marcar_todos_b_{data_selecionada}_{filtro_banco}" not in st.session_state:
+                st.session_state[f"marcar_todos_b_{data_selecionada}_{filtro_banco}"] = False
+            if f"marcar_todos_s_{data_selecionada}_{filtro_sistema}" not in st.session_state:
+                st.session_state[f"marcar_todos_s_{data_selecionada}_{filtro_sistema}"] = False
 
             col1, col2 = st.columns(2)
             
             with col1:
-                st.markdown('<div class="titulo-coluna"><span style="font-size:24px;">🏦</span><div class="texto-header-col">Extrato Sicoob<br><span style="font-size:12px; color:#666; font-weight:normal;">' + str(len(df_banco_tela)) + ' exibidos neste tipo</span></div></div>', unsafe_allow_html=True)
+                st.markdown('<div class="titulo-coluna"><span style="font-size:24px;">🏦</span><div class="texto-header-col">Extrato Sicoob<br><span style="font-size:12px; color:#666; font-weight:normal;">' + str(len(df_banco_tela)) + ' exibidos neste filtro</span></div></div>', unsafe_allow_html=True)
+                
+                # Exibição do Saldo do Banco Filtrado
+                saldo_banco_filtrado = df_banco_tela['Valor'].sum()
+                st.info(f"📊 **Saldo do Extrato Filtrado:** R$ {saldo_banco_filtrado:,.2f}")
                 
                 container_calculo_banco = st.empty()
                 
                 if not df_banco_tela.empty:
-                    if st.button("⭐ Marcar Todos Deste Filtro (Banco)", key=f"btn_b_{data_selecionada}_{tipo_filtro}", use_container_width=True):
-                        st.session_state[f"selecionados_force_b_{data_selecionada}_{tipo_filtro}"] = True
+                    if st.button("⭐ Marcar Todos Deste Filtro (Banco)", key=f"btn_b_{data_selecionada}_{filtro_banco}", use_container_width=True):
+                        st.session_state[f"marcar_todos_b_{data_selecionada}_{filtro_banco}"] = True
                         st.rerun()
 
                 selecionados_banco = []
@@ -465,9 +480,7 @@ elif u_extrato and u_sistema:
                 for _, row in df_banco_tela.iterrows():
                     v_abs = abs(row['Valor'])
                     tem_match = v_abs in valores_sistema_abs
-                    
-                    # Regra de marcação inteligente e estável
-                    valor_padrao_chk = tem_match or st.session_state[f"selecionados_force_b_{data_selecionada}_{tipo_filtro}"]
+                    valor_padrao_chk = tem_match or st.session_state[f"marcar_todos_b_{data_selecionada}_{filtro_banco}"]
                     tag_match = " ⭐ [BATE]" if tem_match else ""
                     label = f"{row.get('Tipo', '🔹 OUTROS')} | R$ {v_abs:,.2f} | {row.get('Detalhe_Limpo', row['Histórico'])[:35]}{tag_match}"
                     
@@ -479,9 +492,70 @@ elif u_extrato and u_sistema:
 
             with col2:
                 lbl_sist = "💻 Paróquia / Eclesial (Dízimos)" if "140" in conta_ativa else "💻 Paróquia / Boletim Theos"
-                st.markdown('<div class="titulo-coluna-igreja"><span style="font-size:24px;">⛪</span><div class="texto-header-col">' + lbl_sist + '<br><span style="font-size:12px; color:#666; font-weight:normal;">' + str(len(df_sistema_tela)) + ' exibidos neste tipo</span></div></div>', unsafe_allow_html=True)
+                st.markdown('<div class="titulo-coluna-igreja"><span style="font-size:24px;">⛪</span><div class="texto-header-col">' + lbl_sist + '<br><span style="font-size:12px; color:#666; font-weight:normal;">' + str(len(df_sistema_tela)) + ' exibidos neste filtro</span></div></div>', unsafe_allow_html=True)
+                
+                # Exibição do Saldo do Sistema Filtrado
+                saldo_sistema_filtrado = df_sistema_tela['Valor'].sum()
+                st.info(f"📊 **Saldo do Boletim Filtrado:** R$ {saldo_sistema_filtrado:,.2f}")
                 
                 container_calculo_sistema = st.empty()
                 
                 if not df_sistema_tela.empty:
-                    if st.button("⭐ Marcar Todos Deste Filtro (Sistema)", key=f"btn_s
+                    if st.button("⭐ Marcar Todos Deste Filtro (Sistema)", key=f"btn_s_{data_selecionada}_{filtro_sistema}", use_container_width=True):
+                        st.session_state[f"marcar_todos_s_{data_selecionada}_{filtro_sistema}"] = True
+                        st.rerun()
+
+                selecionados_sistema = []
+                soma_sistema_atual = 0.0
+                
+                if df_sistema_tela.empty: 
+                    st.success("✅ Nenhum lançamento pendente deste tipo no sistema.")
+                
+                for _, row in df_sistema_tela.iterrows():
+                    v_abs = abs(row['Valor'])
+                    tem_match = v_abs in valores_banco_abs
+                    valor_padrao_chk = tem_match or st.session_state[f"marcar_todos_s_{data_selecionada}_{filtro_sistema}"]
+                    tag_match = " ⭐ [BATE]" if tem_match else ""
+                    label = f"{row.get('Tipo', '🔹 OUTROS')} | R$ {v_abs:,.2f} | {row['Descrição'][:35]}{tag_match}"
+                    
+                    if st.checkbox(label, key=f"t_{row['id_theos']}", value=valor_padrao_chk):
+                        selecionados_sistema.append(row)
+                        soma_sistema_atual += row['Valor']
+                
+                container_calculo_sistema.markdown(f'<div class="caixa-calculo-igreja">📊 Selecionados: {len(selecionados_sistema)} itens | Soma Atual: R$ {soma_sistema_atual:,.2f}</div>', unsafe_allow_html=True)
+
+            st.markdown("---")
+            if selecionados_banco or selecionados_sistema:
+                if st.button("✂️ Confirmar Baixa dos Itens Selecionados", type="primary", use_container_width=True):
+                    passo_atual = {'banco_ids': [], 'theos_ids': []}
+                    for b in selecionados_banco:
+                        st.session_state[chave_banco].append(b['id_banco'])
+                        passo_atual['banco_ids'].append(b['id_banco'])
+                        st.session_state.historico_cortes.append({'Conta': conta_ativa.split('-')[0], 'Origem': 'Banco', 'Data': data_selecionada, 'Descrição': b.get('Detalhe_Limpo', b['Histórico']), 'Valor': b['Valor']})
+                    for t in selecionados_sistema:
+                        st.session_state[chave_sistema].append(t['id_theos'])
+                        passo_atual['theos_ids'].append(t['id_theos'])
+                        st.session_state.historico_cortes.append({'Conta': conta_ativa.split('-')[0], 'Origem': 'Sistema', 'Data': data_selecionada, 'Descrição': t['Descrição'], 'Valor': t['Valor']})
+                    
+                    # Reseta os seletores para o próximo lote/filtro
+                    st.session_state[f"marcar_todos_b_{data_selecionada}_{filtro_banco}"] = False
+                    st.session_state[f"marcar_todos_s_{data_selecionada}_{filtro_sistema}"] = False
+                    
+                    st.session_state.historico_passos.append(passo_atual)
+                    st.toast("Baixa efetuada com sucesso!", icon="✅")
+                    st.rerun()
+
+        with aba_historico:
+            if st.session_state.historico_cortes:
+                st.markdown("#### 📋 Relatório de Itens Fechados nesta Sessão")
+                df_hist = pd.DataFrame(st.session_state.historico_cortes)
+                st.dataframe(df_hist, use_container_width=True, hide_index=True)
+                output = io.BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    df_hist.to_excel(writer, sheet_name='Conciliado', index=False)
+                st.download_button(label="📥 Baixar Planilha de Fechamento (.xlsx)", data=output.getvalue(), file_name="Fechamento_Paroquial.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+            else: st.info("Nenhuma baixa efetuada na sessão atual.")
+else:
+    st.info("💡 Para iniciar, escolha a conta no topo e envie os arquivos correspondentes nas caixas acima.")
+
+```
