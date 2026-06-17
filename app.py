@@ -138,6 +138,7 @@ def carregar_dados_upload(modo_conta, file_banco, file_sistema):
     if not file_banco: return None, None, {}
     dados_b, s_ant, s_finais = processar_extrato_sicoob(file_banco)
     
+    # Agrupamento inteligente de SIPAG para facilitar a vida
     dados_banco_finais = []
     sipag_por_dia = {}
     
@@ -285,13 +286,9 @@ if u_extrato and u_sistema:
                     st.rerun()
 
                 for _, row in df_b_tela.iterrows():
-                    v_real = row['Valor']
-                    v_abs = abs(v_real)
+                    v_abs = abs(row['Valor'])
                     
-                    # Identificador visual de ENTRADA (C) e SAÍDA (D)
-                    icone_direcao = "🟢 (C)" if v_real >= 0 else "🔴 (D)"
-                    
-                    # Inteligência Pro: Descobre se é exato ou taxa (Baseado no valor absoluto)
+                    # Inteligência Pro: Descobre se é exato ou taxa
                     tem_exato = v_abs in valores_s_abs
                     tem_taxa = any(sao_valores_compativeis(v_abs, v_s) for v_s in valores_s_abs)
                     
@@ -299,12 +296,10 @@ if u_extrato and u_sistema:
                     chk_val = (tem_exato or tem_taxa) or st.session_state[f"marcar_{data_selecionada}"]
                     
                     texto_limpo = f"{row['Histórico']} {row['Detalhes']}".strip()
-                    # Rótulo atualizado com o sinal visual C/D
-                    label = f"{icone_direcao} R$ {v_abs:,.2f} | {texto_limpo[:40]} {tag}"
+                    label = f"R$ {v_abs:,.2f} | {texto_limpo[:45]} {tag}"
                     
                     if st.checkbox(label, key=f"b_{row['id_banco']}", value=chk_val):
                         selecionados_banco.append(row)
-                        # Na soma do painel de diferença, continuamos usando o valor absoluto para bater os lados
                         soma_banco_atual += v_abs
                 
                 container_b.markdown(f'<div class="caixa-calculo">💰 Soma Selecionada: R$ {soma_banco_atual:,.2f}</div>', unsafe_allow_html=True)
@@ -318,11 +313,7 @@ if u_extrato and u_sistema:
                     st.rerun()
 
                 for _, row in df_s_tela.iterrows():
-                    v_real = row['Valor']
-                    v_abs = abs(v_real)
-                    
-                    # Identificador visual de ENTRADA (C) e SAÍDA (D)
-                    icone_direcao = "🟢 (C)" if v_real >= 0 else "🔴 (D)"
+                    v_abs = abs(row['Valor'])
                     
                     tem_exato = v_abs in valores_b_abs
                     tem_taxa = any(sao_valores_compativeis(v_b, v_abs) for v_b in valores_b_abs)
@@ -330,8 +321,7 @@ if u_extrato and u_sistema:
                     tag = " ⭐ [EXATO]" if tem_exato else (" 💸 [AJUSTE TAXA]" if tem_taxa else "")
                     chk_val = (tem_exato or tem_taxa) or st.session_state[f"marcar_{data_selecionada}"]
                     
-                    # Rótulo atualizado com o sinal visual C/D
-                    label = f"{icone_direcao} R$ {v_abs:,.2f} | {row['Descrição'][:40]} {tag}"
+                    label = f"R$ {v_abs:,.2f} | {row['Descrição'][:45]} {tag}"
                     
                     if st.checkbox(label, key=f"t_{row['id_theos']}", value=chk_val):
                         selecionados_sistema.append(row)
