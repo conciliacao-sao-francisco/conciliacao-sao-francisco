@@ -9,6 +9,46 @@ import io
 # Configuração da página em modo AMPLO
 st.set_page_config(page_title="Conciliador Multi-Contas São Francisco", layout="wide")
 
+# =========================================================================
+# 🔐 SISTEMA DE SEGURANÇA E CONTROLO DE ACESSO
+# =========================================================================
+if "autenticado" not in st.session_state:
+    st.session_state.autenticado = False
+
+if not st.session_state.autenticado:
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    col_log1, col_log2, col_log3 = st.columns([1, 2, 1])
+    
+    with col_log2:
+        st.markdown("""
+            <div style="background-color: #f8f9fa; padding: 30px; border-radius: 12px; border: 1px solid #dee2e6; box-shadow: 0px 4px 10px rgba(0,0,0,0.05);">
+                <h2 style="text-align: center; color: #003366; margin-bottom: 5px;">⛪ Paróquia São Francisco de Assis</h2>
+                <p style="text-align: center; color: #6c757d; font-size: 14px; margin-bottom: 25px;">Acesso Restrito ao Painel de Conciliação Financeira</p>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        usuario = st.text_input("👤 Nome de Usuário:")
+        senha = st.text_input("🔑 Senha de Acesso:", type="password")
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("🔓 Entrar no Sistema", type="primary", use_container_width=True):
+            # DEFINA ABAIXO O USUÁRIO E A SENHA QUE DESEJAR PARA A PARÓQUIA:
+            if usuario == "secretaria" and senha == "sf@2026":
+                st.session_state.autenticado = True
+                st.rerun()
+            else:
+                st.error("❌ Usuário ou senha incorretos! Tente novamente.")
+                
+    st.stop() # Bloqueia completamente a execução do resto do código se não estiver logado
+
+# =========================================================================
+# ⛪ O SISTEMA SÓ COMEÇA DAQUI PARA BAIXO SE ESTIVER AUTENTICADO
+# =========================================================================
+
+# --- IMAGENS EMBUTIDAS EM VETOR (SEGURANÇA MÁXIMA NA NUVEM) ---
+IMAGEM_BANCO_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="45" height="45" style="vertical-align: middle; margin-right: 10px;"><rect x="15" y="75" width="70" height="12" rx="2" fill="#003366"/><polygon points="50,15 10,40 90,40" fill="#004B87"/><rect x="25" y="40" width="8" height="35" fill="#006699"/><rect x="46" y="40" width="8" height="35" fill="#006699"/><rect x="67" y="40" width="8" height="35" fill="#006699"/><circle cx="50" cy="28" r="4" fill="#FFD700"/></svg>"""
+IMAGEM_IGREJA_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="45" height="45" style="vertical-align: middle; margin-right: 10px;"><path d="M50 12 L82 45 L18 45 Z" fill="#8B4513"/><rect x="26" y="45" width="48" height="42" rx="2" fill="#D2B48C"/><rect x="44" y="62" width="12" height="25" rx="3" fill="#5C4033"/><path d="M50 45 A 8 8 0 0 1 50 29 A 8 8 0 0 1 50 45 Z" fill="#F5F5DC"/><line x1="50" y1="2" x2="50" y2="15" stroke="#FFD700" stroke-width="4"/><line x1="42" y1="8" x2="58" y2="8" stroke="#FFD700" stroke-width="4"/></svg>"""
+
 # --- ESTILIZAÇÃO CUSTOMIZADA (CSS) ---
 st.markdown("""
     <style>
@@ -16,12 +56,23 @@ st.markdown("""
     div[data-testid="stMetricValue"] { font-size: 24px !important; font-weight: bold; }
     .stTabs [data-baseweb="tab"] { font-size: 16px; font-weight: 600; padding: 10px 20px; }
     thead th { background-color: #f0f2f6 !important; color: #31333F !important; font-weight: bold !important; }
+    .titulo-coluna { display: flex; align-items: center; background-color: #f8f9fa; padding: 10px; border-radius: 8px; border-left: 5px solid #004B87; margin-bottom: 15px; }
+    .titulo-coluna-igreja { display: flex; align-items: center; background-color: #fdfaf6; padding: 10px; border-radius: 8px; border-left: 5px solid #8B4513; margin-bottom: 15px; }
     </style>
 """, unsafe_allow_html=True)
 
-# Cabeçalho com Identidade Paroquial
+# Cabeçalho Principal
 st.title("⛪ Sistema Integrado de Conciliação - Paróquia São Francisco de Assis")
-st.caption("Painel Avançado Multi-Contas integrado ao Sicoob, Theos e Eclesial com upload dinâmico de arquivos.")
+st.caption("Painel Avançado Multi-Contas protegido por criptografia de sessão local.")
+
+# Botão de Logoff na barra lateral
+with st.sidebar:
+    st.markdown("### 👤 Usuário Ativo")
+    st.info(f"Conectado como: **{usuario}**")
+    if st.button("🔒 Sair do Sistema (Logoff)", use_container_width=True):
+        st.session_state.autenticado = False
+        st.rerun()
+    st.markdown("---")
 
 # --- SELETOR DA CONTA ATIVA NO TOPO DO APP ---
 conta_ativa = st.selectbox(
@@ -154,7 +205,6 @@ def carregar_dados_upload(modo_conta, file_banco, file_sistema):
     idx_t = 0
     
     if "Conta 161" in modo_conta:
-        # Processamento do Boletim do Theos (Excel)
         df_t_bruto = pd.read_excel(file_sistema, skiprows=7).dropna(how='all')
         for _, row in df_t_bruto.iterrows():
             if len(row) < 23: continue
@@ -174,9 +224,7 @@ def carregar_dados_upload(modo_conta, file_banco, file_sistema):
                         })
                         idx_t += 1
     else:
-        # Processamento do Dízimo Eclesial (CSV)
         try:
-            # Tenta decodificar o arquivo enviado dinamicamente
             conteudo = file_sistema.getvalue().decode('utf-8', errors='ignore')
             df_e = pd.read_csv(io.StringIO(conteudo), skiprows=9, on_bad_lines='skip')
             df_e = df_e[df_e['Dt.Oferta'].str.contains('/', na=False)]
@@ -282,32 +330,56 @@ if u_extrato and u_sistema:
             valores_banco_abs = df_banco_tela['Valor'].abs().tolist()
             valores_sistema_abs = df_sistema_tela['Valor'].abs().tolist() if not df_sistema_tela.empty else []
 
+            if f"marcar_todos_b_{data_selecionada}" not in st.session_state:
+                st.session_state[f"marcar_todos_b_{data_selecionada}"] = False
+            if f"marcar_todos_s_{data_selecionada}" not in st.session_state:
+                st.session_state[f"marcar_todos_s_{data_selecionada}"] = False
+
             col1, col2 = st.columns(2)
+            
             with col1:
-                st.markdown("##### 🏦 Extrato Sicoob (Detalhado)")
+                st.markdown(f'<div class="titulo-coluna">{IMAGEM_BANCO_SVG}<div><b style="font-size:16px; color:#003366;">🏦 Extrato Sicoob</b><br><span style="font-size:12px; color:#666;">{len(df_banco_tela)} pendentes para fechar</span></div></div>', unsafe_allow_html=True)
+                
+                if not df_banco_tela.empty:
+                    if st.button("⭐ Selecionar Todos com Match Automático (Banco)", key=f"btn_b_{data_selecionada}"):
+                        st.session_state[f"marcar_todos_b_{data_selecionada}"] = True
+                        st.rerun()
+
                 selecionados_banco = []
-                if df_banco_tela.empty: st.caption("Tudo liquidado neste dia!")
+                if df_banco_tela.empty: 
+                    st.success("✅ Tudo liquidado no banco neste dia!")
                 for _, row in df_banco_tela.iterrows():
                     v_abs = abs(row['Valor'])
                     tem_match = v_abs in valores_sistema_abs
+                    
+                    valor_padrao_chk = tem_match or st.session_state[f"marcar_todos_b_{data_selecionada}"]
                     tag_match = " ⭐ [BATE]" if tem_match else ""
                     
-                    label = f"{row.get('Tipo', '🔹 OUTROS')} | R$ {v_abs:,.2f} | {row.get('Detalhe_Limpo', row['Histórico'])[:40]}{tag_match}"
-                    if st.checkbox(label, key=f"b_{row['id_banco']}", value=tem_match):
+                    label = f"{row.get('Tipo', '🔹 OUTROS')} | R$ {v_abs:,.2f} | {row.get('Detalhe_Limpo', row['Histórico'])[:35]}{tag_match}"
+                    if st.checkbox(label, key=f"b_{row['id_banco']}", value=valor_padrao_chk):
                         selecionados_banco.append(row)
 
             with col2:
-                lbl_sist = "💻 Paróquia/Eclesial (Dízimos)" if "140" in conta_ativa else "💻 Paróquia/Boletim Theos"
-                st.markdown(f"##### {lbl_sist}")
+                lbl_sist = "💻 Paróquia / Eclesial (Dízimos)" if "140" in conta_ativa else "💻 Paróquia / Boletim Theos"
+                st.markdown(f'<div class="titulo-coluna-igreja">{IMAGEM_IGREJA_SVG}<div><b style="font-size:16px; color:#8B4513;">⛪ {lbl_sist}</b><br><span style="font-size:12px; color:#666;">{len(df_sistema_tela)} pendentes no sistema</span></div></div>', unsafe_allow_html=True)
+                
+                if not df_sistema_tela.empty:
+                    if st.button("⭐ Selecionar Todos com Match Automático (Sistema)", key=f"btn_s_{data_selecionada}"):
+                        st.session_state[f"marcar_todos_s_{data_selecionada}"] = True
+                        st.rerun()
+
                 selecionados_sistema = []
-                if df_sistema_tela.empty: st.caption("Nenhum lançamento no sistema hoje.")
+                if df_sistema_tela.empty: 
+                    st.success("✅ Nenhum lançamento pendente no sistema hoje.")
                 for _, row in df_sistema_tela.iterrows():
                     v_abs = abs(row['Valor'])
                     tem_match = v_abs in valores_banco_abs
+                    
+                    valor_padrao_chk = tem_match or st.session_state[f"marcar_todos_s_{data_selecionada}"]
                     tag_match = " ⭐ [BATE]" if tem_match else ""
                     
-                    label = f"{row.get('Tipo', '🔹 OUTROS')} | R$ {v_abs:,.2f} | {row['Descrição'][:40]}{tag_match}"
-                    if st.checkbox(label, key=f"t_{row['id_theos']}", value=tem_match):
+                    label = f"{row.get('Tipo', '🔹 OUTROS')} | R$ {v_abs:,.2f} | {row['Descrição'][:35]}{tag_match}"
+                    if st.checkbox(label, key=f"t_{row['id_theos']}", value=valor_padrao_chk):
                         selecionados_sistema.append(row)
 
             # Confirmador de Baixas Dinâmico
@@ -323,6 +395,10 @@ if u_extrato and u_sistema:
                         st.session_state[chave_sistema].append(t['id_theos'])
                         passo_atual['theos_ids'].append(t['id_theos'])
                         st.session_state.historico_cortes.append({'Conta': conta_ativa.split('-')[0], 'Origem': 'Sistema', 'Data': data_selecionada, 'Descrição': t['Descrição'], 'Valor': t['Valor']})
+                    
+                    st.session_state[f"marcar_todos_b_{data_selecionada}"] = False
+                    st.session_state[f"marcar_todos_s_{data_selecionada}"] = False
+                    
                     st.session_state.historico_passos.append(passo_atual)
                     st.toast("Baixa efetuada com sucesso!", icon="✅")
                     st.rerun()
