@@ -297,11 +297,34 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         st.markdown("### 🎛️ Controle de Datas")
         data_selecionada = st.selectbox("📆 Dias Pendentes de Baixa:", datas_pendentes, index=st.session_state.indice_data)
         st.session_state.indice_data = datas_pendentes.index(data_selecionada)
+        
+        st.markdown("---")
+        st.markdown("### 👁️ Filtros de Visibilidade")
+        # FUNCIONALIDADE 2: Interruptor inteligente para esconder linhas com valores correspondentes (espelho perfeito)
+        ocultar_iguais = st.toggle("Ocultar correspondências perfeitas", value=False, help="Esconde automaticamente linhas do Sicoob e do Theos que possuem valores idênticos correspondentes no dia.")
 
-    df_banco_dia = df_b_orig[df_b_orig['Data'] == data_selecionada]
-    df_sistema_dia = df_s_orig[df_s_orig['Data'] == data_selecionada] if not df_s_orig.empty else pd.DataFrame()
-    df_sipag_dia = df_sipag_orig[df_sipag_orig['Data'] == data_selecionada] if not df_sipag_orig.empty else pd.DataFrame()
+    df_banco_dia = df_b_orig[df_b_orig['Data'] == data_selecionada].copy()
+    df_sistema_dia = df_s_orig[df_s_orig['Data'] == data_selecionada].copy() if not df_s_orig.empty else pd.DataFrame()
+    df_sipag_dia = df_sipag_orig[df_sipag_orig['Data'] == data_selecionada].copy() if not df_sipag_orig.empty else pd.DataFrame()
     
+    # Lógica inteligente para identificar correspondências perfeitas (valores que batem)
+    ids_banco_ocultar = set()
+    ids_sistema_ocultar = set()
+    
+    if ocultar_iguais and not df_banco_dia.empty and not df_sistema_dia.empty:
+        # Criamos listas temporárias para dar match sem repetir o mesmo item
+        valores_banco = df_banco_dia[['id', 'Valor']].to_dict('records')
+        valores_sistema = df_sistema_dia[['id', 'Valor']].to_dict('records')
+        
+        for item_b in valores_banco:
+            for item_s in valores_sistema:
+                if item_s['id'] not in ids_sistema_ocultar:
+                    # Compara se os valores absolutos batem (para tratar entrada/saída de forma flexível)
+                    if abs(item_b['Valor']) == abs(item_s['Valor']):
+                        ids_banco_ocultar.add(item_b['id'])
+                        ids_sistema_ocultar.add(item_s['id'])
+                        break
+
     saldo_banco_declarado = round(mapa_saldos_banco.get(data_selecionada, 0.0), 2)
     saldo_oficial_boletim = round(mapa_saldos_theos.get(data_selecionada, 0.0), 2)
     
@@ -336,6 +359,10 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         df_sistema_tela = df_sistema_dia if filtro_sist == "Todos" else (df_sistema_dia[df_sistema_dia['Tipo'] == filtro_sist] if not df_sistema_dia.empty else pd.DataFrame())
         df_sipag_tela = df_sipag_dia
         
+        # Filtra na tela os registros caso a opção de ocultar correspondências perfeitas esteja ativa
+        df_banco_exibicao = df_banco_tela[~df_banco_tela['id'].isin(ids_banco_ocultar)]
+        df_sistema_exibicao = df_sistema_tela[~df_sistema_tela['id'].isin(ids_sistema_ocultar)] if not df_sistema_tela.empty else pd.DataFrame()
+        
         st.markdown("<br>", unsafe_allow_html=True)
         col_auto1, col_auto2 = st.columns([2, 1])
         with col_auto1:
@@ -348,31 +375,60 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
 
         st.markdown("---")
         
+        # Inicializando chaves das caixas de marcação
         for _, row in df_banco_tela.iterrows():
             if f"chk_{row['id']}" not in st.session_state: st.session_state[f"chk_{row['id']}"] = False
         if not df_sistema_tela.empty:
             for _, row in df_sistema_tela.iterrows():
                 if f"chk_{row['id']}" not in st.session_state: st.session_state[f"chk_{row['id']}"] = False
 
-        soma_banco_marcado = sum(row['Valor'] for _, row in df_banco_tela.iterrows() if st.session_state.get(f"chk_{row['id']}", False))
-        soma_sistema_marcado = sum(row['Valor'] for _, row in df_sistema_tela.iterrows() if st.session_state.get(f"chk_{row['id']}", False)) if not df_sistema_tela.empty else 0.0
-
         col1, col2, col3 = st.columns(3)
         
         with col1:
             st.markdown('<div class="titulo-coluna">🏦 Extrato Sicoob</div>', unsafe_allow_html=True)
+            
+            # FUNCIONALIDADE 1: Botões de selecionar/retirar seleção em lote para o Extrato Sicoob
+            c_sel1, c_sel2 = st.columns(2)
+            if c_sel1.button("✅ Marcar Todos (Sicoob)", key="btn_sel_all_banco", use_container_width=True):
+                for _, row in df_banco_exibicao.iterrows(): st.session_state[f"chk_{row['id']}"] = True
+                st.rerun()
+            if c_sel2.button("⬜ Desmarcar Todos (Sicoob)", key="btn_desel_all_banco", use_container_width=True):
+                for _, row in df_banco_exibicao.iterrows(): st.session_state[f"chk_{row['id']}"] = False
+                st.rerun()
+                
+            soma_banco_marcado = sum(row['Valor'] for _, row in df_banco_tela.iterrows() if st.session_state.get(f"chk_{row['id']}", False))
             st.markdown(f'<div class="caixa-soma">💰 Selecionado: R$ {soma_banco_marcado:,.2f}</div>', unsafe_allow_html=True)
-            for _, row in df_banco_tela.iterrows():
-                st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Descrição'][:25]}", key=f"chk_{row['id']}")
+            
+            if df_banco_exibicao.empty:
+                st.write("✨ Nenhuma divergência pendente nesta lista.")
+            else:
+                for _, row in df_banco_exibicao.iterrows():
+                    st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Descrição'][:25]}", key=f"chk_{row['id']}")
                 
         with col2:
             st.markdown('<div class="titulo-coluna-igreja">⛪ Paróquia / Boletim Theos</div>', unsafe_allow_html=True)
+            
+            # FUNCIONALIDADE 1: Botões de selecionar/retirar seleção em lote para o Boletim Theos
+            if not df_sistema_exibicao.empty:
+                c_sel3, c_sel4 = st.columns(2)
+                if c_sel3.button("✅ Marcar Todos (Theos)", key="btn_sel_all_sist", use_container_width=True):
+                    for _, row in df_sistema_exibicao.iterrows(): st.session_state[f"chk_{row['id']}"] = True
+                    st.rerun()
+                if c_sel4.button("⬜ Desmarcar Todos (Theos)", key="btn_desel_all_sist", use_container_width=True):
+                    for _, row in df_sistema_exibicao.iterrows(): st.session_state[f"chk_{row['id']}"] = False
+                    st.rerun()
+            
+            soma_sistema_marcado = sum(row['Valor'] for _, row in df_sistema_tela.iterrows() if st.session_state.get(f"chk_{row['id']}", False)) if not df_sistema_tela.empty else 0.0
             st.markdown(f'<div class="caixa-soma">💰 Selecionado: R$ {soma_sistema_marcado:,.2f}</div>', unsafe_allow_html=True)
-            if not df_sistema_tela.empty:
-                for _, row in df_sistema_tela.iterrows():
+            
+            if not df_sistema_exibicao.empty:
+                for _, row in df_sistema_exibicao.iterrows():
                     st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Descrição'][:25]}", key=f"chk_{row['id']}")
             else:
-                st.warning("Sem lançamentos individuais importados.")
+                if ocultar_iguais and not df_sistema_tela.empty:
+                    st.write("✨ Nenhuma divergência pendente nesta lista.")
+                else:
+                    st.warning("Sem lançamentos individuais importados.")
 
         with col3:
             st.markdown('<div class="titulo-coluna-sipag">💳 Conferência Cartão SIPAG</div>', unsafe_allow_html=True)
@@ -419,7 +475,6 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
                 
                 col_upd1, col_upd2, col_upd3 = st.columns([2, 1, 1])
                 
-                # 🛠️ CORREÇÃO CRÍTICA: Vinculando chaves explícitas nos inputs para congelar os valores na sessão
                 nova_desc = col_upd1.text_input("Modificar Descrição para:", value=row_sel['Descrição'], key=f"edt_desc_{item_selecionado}")
                 novo_val = col_upd2.number_input("Modificar Valor para:", value=float(row_sel['Valor']), step=0.01, key=f"edt_val_{item_selecionado}")
                 nova_data = col_upd3.date_input("Transferir para a Data:", value=datetime.datetime.strptime(row_sel['Data'], '%d/%m/%Y').date(), key=f"edt_dt_{item_selecionado}")
@@ -439,7 +494,7 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
                             'id': item_selecionado, 'acao': 'editar', 'desc': nova_desc.upper(), 
                             'valor': novo_val, 'data': nova_data.strftime('%d/%m/%Y')
                         })
-                    st.success("Lançamento atualizado com sucesso!")
+                    st.success("Lançamento updated com sucesso!")
                     st.rerun()
                     
                 if col_b_ed2.button("🗑️ Remover permanentemente este item", use_container_width=True):
