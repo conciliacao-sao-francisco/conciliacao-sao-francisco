@@ -1,6 +1,5 @@
 col1, col2 = st.columns(2)
-            
-            with col1:
+             with col1:
                 st.markdown('<div class="titulo-coluna"><span style="font-size:24px;">🏦</span><div class="texto-header-col">Extrato Sicoob<br><span style="font-size:12px; color:#666; font-weight:normal;">' + str(len(df_banco_tela)) + ' exibidos neste tipo</span></div></div>', unsafe_allow_html=True)
                 container_calculo_banco = st.empty()
                 
