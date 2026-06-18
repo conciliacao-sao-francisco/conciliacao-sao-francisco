@@ -51,7 +51,7 @@ st.markdown("""
     .titulo-coluna { display: flex; align-items: center; background-color: #f8f9fa; padding: 12px; border-radius: 8px; border-left: 5px solid #004B87; margin-bottom: 5px; font-weight: bold; }
     .titulo-coluna-igreja { display: flex; align-items: center; background-color: #fdfaf6; padding: 12px; border-radius: 8px; border-left: 5px solid #8B4513; margin-bottom: 5px; font-weight: bold; }
     .titulo-coluna-sipag { display: flex; align-items: center; background-color: #f4fbf7; padding: 12px; border-radius: 8px; border-left: 5px solid #28a745; margin-bottom: 5px; font-weight: bold; }
-    .caixa-soma { background-color: #f1f3f5; padding: 8px 12px; border-radius: 6px; font-size: 15px; font-weight: bold; margin-bottom: 15px; text-align: center; border: 1px solid #e9ecef; }
+    .caixa-soma { background-color: #f1f3f5; padding: 8px 12px; border-radius: 6px; font-size: 16px; font-weight: bold; margin-bottom: 15px; text-align: center; border: 1px solid #cbd5e1; color: #0f172a; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -284,10 +284,11 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
 
     df_banco_dia = df_b_orig[df_b_orig['Data'] == data_selecionada]
     
+    # Busca o saldo declarado diretamente nos relatórios
     saldo_banco_declarado = round(mapa_saldos_banco.get(data_selecionada, 0.0), 2)
     saldo_theos_declarado = round(mapa_saldos_theos.get(data_selecionada, 0.0), 2)
     
-    diferenca_real = saldo_banco_declarado - saldo_theos_declarado
+    diferenca_real = round(saldo_banco_declarado - saldo_theos_declarado, 2)
     if abs(diferenca_real) < 0.02:
         diferenca_real = 0.0
 
@@ -301,6 +302,7 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
     col_s2.metric("🏦 SALDO DO DIA (Sicoob)", f"R$ {saldo_banco_declarado:,.2f}")
     col_s3.metric("⛪ LINHA DE SALDO (Theos)", f"R$ {saldo_theos_declarado:,.2f}")
     
+    # Como os seus relatórios batem fisicamente, se forem iguais aqui, o status será sempre Verde de sucesso!
     if diferenca_real == 0.0:
         col_s4.metric("🎯 CONCILIAÇÃO BANCÁRIA", "✅ BATENDO", delta="Saldos 100% Iguais")
     else:
@@ -340,9 +342,9 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         st.markdown("---")
         
         # =========================================================================
-        # 🧮 CÁLCULO E INICIALIZAÇÃO DE SOMAS DE SELEÇÃO (NOVA FUNCIONALIDADE)
+        # 🧮 ESTRUTURA REATIVA PARA CALCULAR AS SOMAS ANTES DAS CHECKBOXES
         # =========================================================================
-        # Garante que cada checkbox comece como selecionada (True) se não existir no session_state
+        # Garante o estado inicial como True para todas as caixas novas descobertas
         for _, row in df_banco_tela.iterrows():
             if f"chk_{row['id']}" not in st.session_state: st.session_state[f"chk_{row['id']}"] = True
         if not df_sistema_tela.empty:
@@ -352,26 +354,27 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
             for _, row in df_sipag_tela.iterrows():
                 if f"chk_{row['id']}" not in st.session_state: st.session_state[f"chk_{row['id']}"] = True
 
-        # Processa a soma total estritamente dos que estão marcados como True
+        # Soma dinamizada
         soma_banco_marcado = sum(row['Valor'] for _, row in df_banco_tela.iterrows() if st.session_state.get(f"chk_{row['id']}", True))
         soma_sistema_marcado = sum(row['Valor'] for _, row in df_sistema_tela.iterrows() if st.session_state.get(f"chk_{row['id']}", True)) if not df_sistema_tela.empty else 0.0
         soma_sipag_marcado = sum(row['Valor'] for _, row in df_sipag_tela.iterrows() if st.session_state.get(f"chk_{row['id']}", True)) if not df_sipag_tela.empty else 0.0
 
-        # Montagem dos containers e colunas em tela
+        # Montagem das 3 colunas lado a lado
         col1, col2, col3 = st.columns(3)
         
         with col1:
             st.markdown('<div class="titulo-coluna">🏦 Extrato Sicoob</div>', unsafe_allow_html=True)
             st.markdown(f'<div class="caixa-soma">💰 Selecionado: R$ {soma_banco_marcado:,.2f}</div>', unsafe_allow_html=True)
             for _, row in df_banco_tela.iterrows():
-                st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Descrição'][:25]}", key=f"chk_{row['id']}", on_change=None)
+                # O parâmetro key faz o vinculo direto com o session_state e o st.rerun recarrega a soma no ato do clique
+                st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Descrição'][:25]}", key=f"chk_{row['id']}", on_change=st.rerun)
                 
         with col2:
             st.markdown('<div class="titulo-coluna-igreja">⛪ Paróquia / Boletim Theos</div>', unsafe_allow_html=True)
             st.markdown(f'<div class="caixa-soma">💰 Selecionado: R$ {soma_sistema_marcado:,.2f}</div>', unsafe_allow_html=True)
             if not df_sistema_tela.empty:
                 for _, row in df_sistema_tela.iterrows():
-                    st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Descrição'][:25]}", key=f"chk_{row['id']}", on_change=None)
+                    st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Descrição'][:25]}", key=f"chk_{row['id']}", on_change=st.rerun)
             else:
                 st.warning("Sem registros no sistema para este dia.")
 
@@ -380,7 +383,7 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
             st.markdown(f'<div class="caixa-soma">💰 Selecionado: R$ {soma_sipag_marcado:,.2f}</div>', unsafe_allow_html=True)
             if not df_sipag_tela.empty:
                 for _, row in df_sipag_tela.iterrows():
-                    st.checkbox(f"R$ {row['Valor']:,.2f} | CC: {row['CentroCusto']}", key=f"chk_{row['id']}", on_change=None)
+                    st.checkbox(f"R$ {row['Valor']:,.2f} | CC: {row['CentroCusto']}", key=f"chk_{row['id']}", on_change=st.rerun)
             else:
                 st.warning("Sem registros com os filtros atuais.")
 
