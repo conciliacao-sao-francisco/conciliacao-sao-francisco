@@ -1,14 +1,3 @@
-Com certeza! Ter um botão de **"Desfazer Última Ação" (Undo)** traz uma segurança enorme para o uso diário, caso você oculte algo por engano.
-
-Para fazer isso, vamos transformar a nossa memória simples (`baixados_manualmente`) em uma **pilha de histórico (uma lista)**. Assim, toda vez que você clicar em ocultar, o sistema lembra exatamente quais IDs foram ocultados *naquela rodada específica*. Se você clicar em "Desfazer", ele resgata apenas o último grupo ocultado e devolve para a tela, sem mexer no resto.
-
----
-
-### 💻 Código Atualizado com o Botão "Desfazer Última Ação"
-
-Substitua o código do seu `app.py` por esta versão. Note que adicionei o botão **"↩️ Desfazer Última Ocultação"** logo abaixo do botão de ocultar e também limpei os textos da barra lateral para o painel ficar mais enxuto.
-
-```python
 import logging
 logging.getLogger("asyncio").setLevel(logging.CRITICAL)  # Silencia avisos no terminal
 
@@ -592,5 +581,3 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         if st.session_state[chave_dias_conciliados]:
             for d in st.session_state[chave_dias_conciliados]:
                 st.success(f"📆 Dia {d} -> **CONCILIADO E PRONTO**")
-
-```
