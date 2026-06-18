@@ -27,7 +27,7 @@ if not st.session_state.autenticado:
         st.markdown("""
             <div style="background-color: #f8f9fa; padding: 30px; border-radius: 12px; border: 1px solid #dee2e6; box-shadow: 0px 4px 10px rgba(0,0,0,0.05);">
                 <h2 style="text-align: center; color: #003366; margin-bottom: 5px;">⛪ Paróquia São Francisco de Assis</h2>
-                <p style="text-align: center; color: #6c757d; font-size: 14px; margin-bottom: 25px;">Acesso Restrito ao Painel de Conciliação Financeira</p>
+                <p style="text-align: center; color: #6c757d; font-size: 14px; margin-bottom: 25px;">Acesso Restrito ao Painel de Conciliation Financeira</p>
             </div>
         """, unsafe_allow_html=True)
         usuario_input = st.text_input("👤 Nome de Usuário:")
@@ -131,16 +131,12 @@ def converter_valor_extrato(val_str):
 
 def processar_extrato_sicoob(arquivo_bytes):
     df_s_bruto = pd.read_excel(io.BytesIO(arquivo_bytes), skiprows=1)
-    
-    saldo_anterior_inicial = 0.0
     saldos_finais_por_dia = {}
     
     for _, row in df_s_bruto.iterrows():
         if len(row) < 4: continue
         historico = str(row.iloc[2]).strip().upper()
         data_linha = row.iloc[0]
-        if "SALDO ANTERIOR" in historico: 
-            saldo_anterior_inicial = abs(converter_valor_extrato(row.iloc[3]))
         if "SALDO DO DIA" in historico and pd.notna(data_linha):
             try:
                 dt_formatada = pd.to_datetime(str(data_linha).strip(), dayfirst=True).strftime('%d/%m/%Y')
@@ -166,39 +162,38 @@ def processar_extrato_sicoob(arquivo_bytes):
                 linha_mestre['Detalhes'] += " " + " ".join([str(v).strip() for v in row.values if pd.notna(v)])
                 
     if linha_mestre: dados_banco_brutos.append(linha_mestre)
-    return dados_banco_brutos, saldo_anterior_inicial, saldos_finais_por_dia
+    return dados_banco_brutos, saldos_finais_por_dia
 
 def processar_sistema_theos(arquivo_bytes):
     df_t_bruto = pd.read_excel(io.BytesIO(arquivo_bytes), skiprows=7).dropna(how='all')
     dados_contrapartida = []
     saldos_sistema_por_dia = {}
     
-    # Roda a planilha buscando lançamentos e acumula saldos se houver coluna indicativa
     for idx_t, row in df_t_bruto.iterrows():
-        if len(row) < 23: continue
+        if len(row) < 17: continue
         dt_val = row.iloc[0]
         if pd.notna(dt_val) and ('-' in str(dt_val) or '/' in str(dt_val)):
-            desc = str(row.iloc[9]).strip()
+            desc = str(row.iloc[9]).strip().upper()
             ent = float(row.iloc[16]) if pd.notna(row.iloc[16]) else 0.0
-            sai = float(row.iloc[22]) if pd.notna(row.iloc[22]) else 0.0
+            sai = float(row.iloc[22]) if len(row) > 22 and pd.notna(row.iloc[22]) else 0.0
             v_liq = ent - sai
             
             dt_obj = pd.to_datetime(str(dt_val)[:10], errors='coerce')
             if pd.notna(dt_obj):
                 dt_f = dt_obj.strftime('%d/%m/%Y')
                 
-                # Se for linha de movimentação padrão
-                if v_liq != 0 and "SUBTOTAL" not in desc.upper() and "SALDO" not in desc.upper():
+                # VARREDURA PRECISAS DA LINHA DE SALDO DO BOLETIM
+                if "SALDO" in desc or "SALDO DO DIA" in desc or "SALDO DA CONTA" in desc:
+                    try:
+                        val_saldo = ent if ent != 0 else (sai if sai != 0 else 0.0)
+                        saldos_sistema_por_dia[dt_f] = val_saldo
+                    except: pass
+                
+                elif v_liq != 0 and "SUBTOTAL" not in desc:
                     dados_contrapartida.append({
                         'id': f"T_{idx_t}", 'Data': dt_f,
                         'Tipo': "ENTRADA" if v_liq > 0 else "SAÍDA", 'Descrição': desc, 'Valor': round(v_liq, 2), 'Origem': 'Sistema'
                     })
-                
-                # Captura de Saldo Acumulado do Dia na linha (Comum na penúltima/última coluna do Theos)
-                # Altere o índice numérico abaixo caso a coluna de saldo mude no seu layout do Theos
-                if len(row) >= 24 and pd.notna(row.iloc[-1]) and ("SUBTOTAL" in desc.upper() or "SALDO" in desc.upper()):
-                    try: saldos_sistema_por_dia[dt_f] = float(row.iloc[-1])
-                    except: pass
                     
     return dados_contrapartida, saldos_sistema_por_dia
 
@@ -228,8 +223,8 @@ def processar_sipag_csv(arquivo_bytes):
 
 # Processamento Principal usando a memória segura
 if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]:
-    dados_b, s_inicial, mapa_saldos_reais = processar_extrato_sicoob(st.session_state[chave_store_banco])
-    dados_t, mapa_saldos_sistema = processar_sistema_theos(st.session_state[chave_store_sistema])
+    dados_b, mapa_saldos_banco = processar_extrato_sicoob(st.session_state[chave_store_banco])
+    dados_t, mapa_saldos_theos = processar_sistema_theos(st.session_state[chave_store_sistema])
     
     dados_banco_finais = []
     for idx, item in enumerate(dados_b):
@@ -289,30 +284,48 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
 
     df_banco_dia = df_b_orig[df_b_orig['Data'] == data_selecionada]
     
-    # Resgate dos Saldos de Fechamento do Dia do Banco e do Sistema
-    saldo_final_extrato_dia = mapa_saldos_reais.get(data_selecionada, 0.0)
+    # Leitura direta dos saldos declarados
+    saldo_banco_declarado = mapa_saldos_banco.get(data_selecionada, 0.0)
+    saldo_theos_declarado = mapa_saldos_theos.get(data_selecionada, 0.0)
     
-    # Se o sistema não tiver um saldo explícito mapeado em linha, calcula o saldo dinâmico acumulativo
-    saldo_final_sistema_dia = mapa_saldos_sistema.get(data_selecionada, 0.0)
-    if saldo_final_sistema_dia == 0.0 and not df_s_orig.empty:
+    if saldo_theos_declarado == 0.0 and not df_s_orig.empty:
         df_ate_hoje = df_s_orig[pd.to_datetime(df_s_orig['Data'], dayfirst=True) <= pd.to_datetime(data_selecionada, dayfirst=True)]
-        saldo_final_sistema_dia = df_ate_hoje['Valor'].sum()
+        saldo_theos_declarado = df_ate_hoje['Valor'].sum()
+
+    diferenca_real = saldo_banco_declarado - saldo_theos_declarado
 
     st.markdown("---")
     
     # =========================================================================
-    # 💰 PAINEL DE MÉTRICAS COMPARTILHADO: BANCO VS SISTEMA (THEOS)
+    # 💰 PAINEL DE CONFRONTO DE SALDOS REAIS (BOLETIM VS EXTRATO)
     # =========================================================================
     col_s1, col_s2, col_s3, col_s4 = st.columns(4)
     col_s1.metric("📅 Dia em Execução", data_selecionada)
-    col_s2.metric("🔄 Movimentação do Dia", f"R$ {df_banco_dia['Valor'].sum():,.2f}")
-    col_s3.metric("🏦 SALDO NO EXTRATO (Sicoob)", f"R$ {saldo_final_extrato_dia:,.2f}")
+    col_s2.metric("🏦 SALDO DO DIA (Sicoob)", f"R$ {saldo_banco_declarado:,.2f}")
+    col_s3.metric("⛪ LINHA DE SALDO (Theos)", f"R$ {saldo_theos_declarado:,.2f}")
     
-    # Destaca em verde se os saldos forem iguais, ou mantém padrão
-    if abs(saldo_final_extrato_dia - saldo_final_sistema_dia) < 0.05:
-        col_s4.metric("⛪ SALDO NO SISTEMA (Theos)", f"R$ {saldo_final_sistema_dia:,.2f}", delta="✅ BATENDO!")
+    if abs(diferenca_real) < 0.01:
+        col_s4.metric("🎯 CONCILIAÇÃO BANCÁRIA", "✅ BATENDO", delta="Saldos 100% Iguais")
     else:
-        col_s4.metric("⛪ SALDO NO SISTEMA (Theos)", f"R$ {saldo_final_sistema_dia:,.2f}", delta="⚠️ Divergência")
+        col_s4.metric("🎯 CONCILIAÇÃO BANCÁRIA", "⚠️ DIVERGENTE", delta=f"Dif: R$ {diferenca_real:,.2f}", delta_color="inverse")
+
+    # =========================================================================
+    # 🔍 PAINEL ANALÍTICO DE DIVERGÊNCIAS (RECURSO ADICIONADO)
+    # =========================================================================
+    if abs(diferenca_real) >= 0.01:
+        with st.expander("🔍 **Painel Analítico de Divergências de Saldo (Clique para expandir e investigar)**", expanded=True):
+            st.error(f"⚠️ Atenção secretaria: O saldo do Sicoob e do Boletim divergem em **R$ {diferenca_real:,.2f}** no dia {data_selecionada}.")
+            col_an1, col_an2 = st.columns(2)
+            with col_an1:
+                st.markdown("**📋 Entradas e Saídas no Extrato Bancário:**")
+                st.dataframe(df_banco_dia[['Tipo', 'Descrição', 'Valor']], use_container_width=True)
+            with col_an2:
+                st.markdown("**📋 Entradas e Saídas no Boletim/Theos:**")
+                df_s_dia = df_s_orig[df_s_orig['Data'] == data_selecionada] if not df_s_orig.empty else pd.DataFrame()
+                if not df_s_dia.empty:
+                    st.dataframe(df_s_dia[['Tipo', 'Descrição', 'Valor']], use_container_width=True)
+                else:
+                    st.warning("Nenhum lançamento encontrado no sistema para este dia.")
 
     aba_conciliacao, aba_historico = st.tabs(["🔄 Esteira de Conciliação Diária", "📋 Histórico de Fechamento"])
 
@@ -329,22 +342,16 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         
         df_sipag_tela = df_sipag_orig[df_sipag_orig['Data'] == data_selecionada] if not df_sipag_orig.empty else pd.DataFrame()
         
-        # Multi-Filtro Avançado SIPAG
         if not df_sipag_tela.empty:
             lista_ccs = sorted(df_sipag_tela['CentroCusto'].unique().tolist())
             st.markdown("#### 💳 Filtros por Múltiplos Centros de Custo (SIPAG)")
-            cc_selecionados = st.multiselect(
-                "Escolha as bandeiras/centros para cruzar em tela:",
-                options=lista_ccs, default=lista_ccs
-            )
+            cc_selecionados = st.multiselect("Escolha as bandeiras/centros para cruzar em tela:", options=lista_ccs, default=lista_ccs)
             df_sipag_tela = df_sipag_tela[df_sipag_tela['CentroCusto'].isin(cc_selecionados)]
 
         st.markdown("<br>", unsafe_allow_html=True)
         col_auto1, col_auto2 = st.columns([2, 1])
-        
         with col_auto1:
             st.info(f"Clicando ao lado, o dia **{data_selecionada}** será arquivado e sumirá imediatamente desta listagem.")
-                
         with col_auto2:
             if st.button("⚡ Confirmar Baixa Direta e Ir p/ Próximo Dia", type="primary", use_container_width=True):
                 st.session_state[chave_dias_conciliados].append(data_selecionada)
@@ -353,7 +360,6 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
 
         st.markdown("---")
         
-        # Exibição das Colunas
         col1, col2, col3 = st.columns(3)
         with col1:
             st.markdown('<div class="titulo-coluna">🏦 Extrato Sicoob</div>', unsafe_allow_html=True)
