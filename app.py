@@ -308,14 +308,18 @@ def processar_sipag_csv(arquivo_bytes):
                 dt_f = pd.to_datetime(dt_str, dayfirst=True).strftime('%d/%m/%Y')
                 bandeira = str(row.iloc[3]).strip()
                 forma = str(row.iloc[4]).strip()
+                
+                # Mapeando explicitamente as colunas financeiras estruturadas (Bruto, Taxa e Compensado/Líquido)
                 v_bruto = converter_valor_extrato(row.iloc[9])
+                v_taxa = converter_valor_extrato(row.iloc[11]) if len(row) > 11 else 0.0
+                v_liquido = converter_valor_extrato(row.iloc[12]) if len(row) > 12 else v_bruto
                 
                 cc_valores = [str(val).strip() for val in row.values if pd.notna(val)]
                 centro_custo = cc_valores[-1] if len(cc_valores) > 0 else "NÃO INFORMADO"
                 
                 dados_finais.append({
                     'id': f"SIPAG_{idx}", 'Data': dt_f, 'Tipo': f"💳 LOTE {bandeira.upper()}",
-                    'Descrição': f"CARTÃO {forma.upper()}", 'Valor': v_bruto, 'Origem': 'Sipag', 'CentroCusto': centro_custo
+                    'Descrição': f"CARTÃO {forma.upper()}", 'Valor': v_bruto, 'ValorBruto': v_bruto, 'Taxa': v_taxa, 'ValorLiquido': v_liquido, 'Origem': 'Sipag', 'CentroCusto': centro_custo
                 })
             except: continue
         return pd.DataFrame(dados_finais)
@@ -550,10 +554,25 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         with col3:
             st.markdown('<div class="titulo-coluna-sipag">💳 Conferência Cartão SIPAG</div>', unsafe_allow_html=True)
             if not df_sipag_tela.empty:
-                soma_sipag = sum(df_sipag_tela['Valor'])
-                st.markdown(f'<div class="caixa-soma">Lote Total: R$ {soma_sipag:,.2f}</div>', unsafe_allow_html=True)
-                for _, row in df_sipag_tela.iterrows():
-                    st.write(f"• R$ {row['Valor']:,.2f} | {row['CentroCusto']}")
+                # ➕ ACRESCENTADO: Filtro Dinâmico por Centro de Custo na interface do SIPAG
+                lista_cc = sorted(df_sipag_tela['CentroCusto'].unique().tolist())
+                cc_selecionados = st.multiselect("Filtrar por CC:", options=lista_cc, default=lista_cc, key=f"ms_cc_{data_selecionada}")
+                
+                df_sipag_filtrado = df_sipag_tela[df_sipag_tela['CentroCusto'].isin(cc_selecionados)]
+                
+                # ➕ ACRESCENTADO: Totalizadores estruturados extraídos diretamente do CSV
+                soma_bruto = sum(df_sipag_filtrado['ValorBruto'])
+                soma_taxa = sum(df_sipag_filtrado['Taxa'])
+                soma_liquido = sum(df_sipag_filtrado['ValorLiquido'])
+                
+                st.markdown(f'<div class="caixa-soma" style="font-size:13px; text-align:left; line-height:1.6;">'
+                            f'▪️ <b>Bruto Lote:</b> R$ {soma_bruto:,.2f}<br>'
+                            f'▪️ <b>Taxa Lote:</b> R$ {soma_taxa:,.2f}<br>'
+                            f'▪️ <b>Compensado:</b> R$ {soma_liquido:,.2f}'
+                            f'</div>', unsafe_allow_html=True)
+                
+                for _, row in df_sipag_filtrado.iterrows():
+                    st.write(f"• **{row['CentroCusto']}** | Brut: R$ {row['ValorBruto']:,.2f} | Tax: R$ {row['Taxa']:,.2f} | Liq: R$ {row['ValorLiquido']:,.2f}")
             else:
                 st.warning("Sem registros SIPAG para este dia.")
 
@@ -618,7 +637,7 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
                     
                     if registro_original and registro_original['acao'] == 'inserir':
                         registro_original['desc'] = nova_desc.upper()
-                        registro_original['valor'] = novo_val
+                        registro_original['valor'] = Urban_val
                         registro_original['data'] = nova_data.strftime('%d/%m/%Y')
                     else:
                         st.session_state[chave_modificacoes] = [m for m in st.session_state[chave_modificacoes] if m['id'] != item_selecionado]
