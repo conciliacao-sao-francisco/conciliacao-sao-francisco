@@ -282,3 +282,184 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
 
     # Filtragem inteligente de datas pendentes
     todas_datas_totais = sorted(list(set(df_b_orig['Data'].unique()).union(set(df_s_orig['Data'].unique()))), key=lambda x: pd.to_datetime(x, dayfirst=True))
+    datas_pendentes = [d for d in todas_datas_totais if d not in st.session_state[chave_dias_conciliados]]
+
+    if not datas_pendentes:
+        st.balloons()
+        st.success("🎉 Todos os dias desse período foram totalmente conciliados e baixados!")
+        if st.button("🔄 Reiniciar Período / Limpar Histórico"):
+            st.session_state[chave_dias_conciliados] = []
+            st.rerun()
+        st.stop()
+
+    if 'indice_data' not in st.session_state or st.session_state.indice_data >= len(datas_pendentes):
+        st.session_state.indice_data = 0
+
+    with st.sidebar:
+        st.markdown("### 🎛️ Controle de Datas")
+        data_selecionada = st.selectbox("📆 Dias Pendentes de Baixa:", datas_pendentes, index=st.session_state.indice_data)
+        st.session_state.indice_data = datas_pendentes.index(data_selecionada)
+
+    df_banco_dia = df_b_orig[df_b_orig['Data'] == data_selecionada]
+    
+    saldo_banco_declarado = round(mapa_saldos_banco.get(data_selecionada, 0.0), 2)
+    saldo_theos_declarado = round(mapa_saldos_theos.get(data_selecionada, 0.0), 2)
+    
+    diferenca_real = round(saldo_banco_declarado - saldo_theos_declarado, 2)
+    if abs(diferenca_real) < 0.02:
+        diferenca_real = 0.0
+
+    st.markdown("---")
+    
+    # =========================================================================
+    # 💰 PAINEL DE CONFRONTO DE SALDOS REAIS (BOLETIM VS EXTRATO)
+    # =========================================================================
+    col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+    col_s1.metric("📅 Dia em Execução", data_selecionada)
+    col_s2.metric("🏦 SALDO DO DIA (Sicoob)", f"R$ {saldo_banco_declarado:,.2f}")
+    col_s3.metric("⛪ LINHA DE SALDO (Theos)", f"R$ {saldo_theos_declarado:,.2f}")
+    
+    if diferenca_real == 0.0:
+        col_s4.metric("🎯 CONCILIAÇÃO BANCÁRIA", "✅ BATENDO", delta="Saldos 100% Iguais")
+    else:
+        col_s4.metric("🎯 CONCILIAÇÃO BANCÁRIA", "⚠️ DIVERGENTE", delta=f"Dif: R$ {diferenca_real:,.2f}", delta_color="inverse")
+
+    aba_conciliacao, aba_historico = st.tabs(["🔄 Esteira de Conciliação Diária", "📋 Histórico de Fechamento"])
+
+    with aba_conciliacao:
+        st.markdown(f"### Lançamentos Ativos do Dia: <span style='color:#004B87;'>{data_selecionada}</span>", unsafe_allow_html=True)
+        
+        c_flt1, c_flt2 = st.columns(2)
+        filtro_banco = c_flt1.selectbox("🎯 Filtrar Extrato Sicoob:", ["Todos", "🟢 PIX RECEBIDO", "🔴 PIX ENVIADO", "🔴 PAGTO TITULO", "💳 SIPAG LOTE"])
+        filtro_sist = c_flt2.selectbox("🎯 Filtrar Sistema:", ["Todos", "ENTRADA", "SAÍDA"])
+        
+        df_banco_tela = df_banco_dia if filtro_banco == "Todos" else df_banco_dia[df_banco_dia['Tipo'] == filtro_banco]
+        df_sistema_tela = df_s_orig[df_s_orig['Data'] == data_selecionada] if not df_s_orig.empty else pd.DataFrame()
+        if filtro_sist != "Todos" and not df_sistema_tela.empty: df_sistema_tela = df_sistema_tela[df_sistema_tela['Tipo'] == filtro_sist]
+        
+        df_sipag_tela = df_sipag_orig[df_sipag_orig['Data'] == data_selecionada] if not df_sipag_orig.empty else pd.DataFrame()
+        
+        if not df_sipag_tela.empty:
+            lista_ccs = sorted(df_sipag_tela['CentroCusto'].unique().tolist())
+            st.markdown("#### 💳 Filtros por Múltiplos Centros de Custo (SIPAG)")
+            cc_selecionados = st.multiselect("Escolha as bandeiras/centros para cruzar em tela:", options=lista_ccs, default=lista_ccs)
+            df_sipag_tela = df_sipag_tela[df_sipag_tela['CentroCusto'].isin(cc_selecionados)]
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        col_auto1, col_auto2 = st.columns([2, 1])
+        with col_auto1:
+            st.info(f"Clicando ao lado, o dia **{data_selecionada}** será arquivado e sumirá imediatamente desta listagem.")
+        with col_auto2:
+            if st.button("⚡ Confirmar Baixa Direta e Ir p/ Próximo Dia", type="primary", use_container_width=True):
+                st.session_state[chave_dias_conciliados].append(data_selecionada)
+                st.toast(f"✅ Dia {data_selecionada} baixado!")
+                st.rerun()
+
+        st.markdown("---")
+        
+        # =========================================================================
+        # 🧮 ESTRUTURA REATIVA DAS CHECKBOXES
+        # =========================================================================
+        for _, row in df_banco_tela.iterrows():
+            if f"chk_{row['id']}" not in st.session_state: st.session_state[f"chk_{row['id']}"] = False
+        if not df_sistema_tela.empty:
+            for _, row in df_sistema_tela.iterrows():
+                if f"chk_{row['id']}" not in st.session_state: st.session_state[f"chk_{row['id']}"] = False
+        if not df_sipag_tela.empty:
+            for _, row in df_sipag_tela.iterrows():
+                if f"chk_{row['id']}" not in st.session_state: st.session_state[f"chk_{row['id']}"] = False
+
+        soma_banco_marcado = sum(row['Valor'] for _, row in df_banco_tela.iterrows() if st.session_state.get(f"chk_{row['id']}", False))
+        soma_sistema_marcado = sum(row['Valor'] for _, row in df_sistema_tela.iterrows() if st.session_state.get(f"chk_{row['id']}", False)) if not df_sistema_tela.empty else 0.0
+        soma_sipag_marcado = sum(row['Valor'] for _, row in df_sipag_tela.iterrows() if st.session_state.get(f"chk_{row['id']}", False)) if not df_sipag_tela.empty else 0.0
+
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown('<div class="titulo-coluna">🏦 Extrato Sicoob</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="caixa-soma">💰 Selecionado: R$ {soma_banco_marcado:,.2f}</div>', unsafe_allow_html=True)
+            for _, row in df_banco_tela.iterrows():
+                st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Descrição'][:25]}", key=f"chk_{row['id']}")
+                
+        with col2:
+            st.markdown('<div class="titulo-coluna-igreja">⛪ Paróquia / Boletim Theos</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="caixa-soma">💰 Selecionado: R$ {soma_sistema_marcado:,.2f}</div>', unsafe_allow_html=True)
+            if not df_sistema_tela.empty:
+                for _, row in df_sistema_tela.iterrows():
+                    st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Descrição'][:25]}", key=f"chk_{row['id']}")
+            else:
+                st.warning("Sem registros no sistema para este dia.")
+
+        with col3:
+            st.markdown('<div class="titulo-coluna-sipag">💳 Conferência Cartão SIPAG</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="caixa-soma">💰 Selecionado: R$ {soma_sipag_marcado:,.2f}</div>', unsafe_allow_html=True)
+            if not df_sipag_tela.empty:
+                for _, row in df_sipag_tela.iterrows():
+                    st.checkbox(f"R$ {row['Valor']:,.2f} | CC: {row['CentroCusto']}", key=f"chk_{row['id']}")
+            else:
+                st.warning("Sem registros com os filtros atuais.")
+
+        # Central de Ajustes Manuais
+        st.markdown("---")
+        st.markdown("### ✏️ Central de Ajustes, Edição e Mudança de Datas")
+        aba_ins, aba_edt = st.tabs(["➕ Inserir Novo Ajuste Manual", "📝 Modificar / Remover Lançamentos Existentes"])
+        
+        with aba_ins:
+            col_ed1, col_ed2, col_ed3, col_ed4 = st.columns([2, 1, 1, 1])
+            desc_ajuste = col_ed1.text_input("Descrição do ajuste:", key="ins_desc")
+            val_ajuste = col_ed2.number_input("Valor (R$):", step=0.01, key="ins_val")
+            tipo_ajuste = col_ed3.selectbox("Origem do ajuste:", ["Ajuste Banco", "Ajuste Sistema", "Ajuste Sipag"], key="ins_orig")
+            dt_ajuste = col_ed4.date_input("Data do Lançamento:", value=datetime.date(2026, 6, 1), key="ins_data")
+            
+            if st.button("➕ Inserir Ajuste na Linha do Tempo", use_container_width=True):
+                id_gerado = f"M_INS_{len(st.session_state[chave_modificacoes])}"
+                origem_convertida = 'Banco' if "Banco" in tipo_ajuste else ('Sistema' if "Sistema" in tipo_ajuste else 'Sipag')
+                st.session_state[chave_modificacoes].append({
+                    'id': id_gerado, 'acao': 'inserir', 'desc': desc_ajuste.upper(),
+                    'valor': val_ajuste, 'origem': origem_convertida, 'data': dt_ajuste.strftime('%d/%m/%Y'), 'cc': 'Ajuste Manual'
+                })
+                st.success("Ajuste injetado no sistema com sucesso!")
+                st.rerun()
+
+        with aba_edt:
+            lista_dfs = [df for df in [df_banco_tela, df_sistema_tela, df_sipag_tela] if not df.empty]
+            df_todos_dia = pd.concat(lista_dfs, ignore_index=True) if lista_dfs else pd.DataFrame()
+            
+            if not df_todos_dia.empty:
+                item_selecionado = st.selectbox(
+                    "Escolha qual lançamento deseja alterar/remover hoje:", df_todos_dia['id'].tolist(),
+                    format_func=lambda x: f"[{df_todos_dia[df_todos_dia['id']==x]['Origem'].values[0]}] {df_todos_dia[df_todos_dia['id']==x]['Descrição'].values[0][:30]} | R$ {df_todos_dia[df_todos_dia['id']==x]['Valor'].values[0]}"
+                )
+                row_sel = df_todos_dia[df_todos_dia['id'] == item_selecionado].iloc[0]
+                
+                col_upd1, col_upd2, col_upd3 = st.columns([2, 1, 1])
+                nova_desc = col_upd1.text_input("Modificar Descrição para:", value=row_sel['Descrição'])
+                novo_val = col_upd2.number_input("Modificar Valor para:", value=float(row_sel['Valor']), step=0.01)
+                nova_data = col_upd3.date_input("Transferir para a Data:", value=datetime.datetime.strptime(row_sel['Data'], '%d/%m/%Y').date())
+                
+                col_b_ed1, col_b_ed2 = st.columns(2)
+                if col_b_ed1.button("💾 Gravar Alterações / Mudar Data", type="primary", use_container_width=True):
+                    st.session_state[chave_modificacoes] = [m for m in st.session_state[chave_modificacoes] if m['id'] != item_selecionado]
+                    st.session_state[chave_modificacoes].append({
+                        'id': item_selecionado, 'acao': 'editar', 'desc': nova_desc.upper(), 
+                        'valor': novo_val, 'data': nova_data.strftime('%d/%m/%Y')
+                    })
+                    st.success("Lançamento atualizado!")
+                    st.rerun()
+                if col_b_ed2.button("🗑️ Remover permanentemente este item", use_container_width=True):
+                    st.session_state[chave_modificacoes] = [m for m in st.session_state[chave_modificacoes] if m['id'] != item_selecionado]
+                    st.session_state[chave_modificacoes].append({'id': item_selecionado, 'acao': 'excluir'})
+                    st.success("Item removido!")
+                    st.rerun()
+            else: 
+                st.info("Nenhum lançamento passível de alteração listado hoje.")
+
+    with aba_historico:
+        st.markdown("### 📋 Histórico de Fechamento do Período")
+        if st.session_state[chave_dias_conciliados]:
+            for d in st.session_state[chave_dias_conciliados]:
+                st.success(f"📆 Dia {d} -> **BAIXADO NO SISTEMA**")
+        else:
+            st.info("Nenhum dia fechado ainda.")
+else:
+    st.info("💡 Insira ao menos o Extrato do Sicoob e o Relatório do Boletim (Theos) para liberar as telas de conciliação.")
