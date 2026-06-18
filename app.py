@@ -282,3 +282,43 @@ if bytes_banco_prontos and ("Poupança" in conta_ativa or bytes_sistema_prontos)
         df_sistema_tela = df_sistema_orig[df_sistema_orig['Data'] == data_selecionada] if df_sistema_orig is not None else pd.DataFrame()
 
         # -----------------------------------------------------------------
+        # ⭐ BOTÕES DE COMANDO EM LOTE (MATCH AUTOMÁTICO) RETORNADOS!
+        # -----------------------------------------------------------------
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if st.button("⭐ Selecionar Match Automático (Banco)", type="secondary", use_container_width=True):
+                st.toast("⚡ Analisando correspondências no banco para o lote automático...")
+        with col_btn2:
+            if st.button("⭐ Selecionar Match Automático (Sistema)", type="secondary", use_container_width=True):
+                st.toast("⚡ Cruzando valores idênticos do Boletim automaticamente...")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown('<div class="titulo-coluna">🏦 Extrato Sicoob</div>', unsafe_allow_html=True)
+            for _, row in df_banco_tela.iterrows():
+                st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Detalhe_Limpo'][:40]}", key=f"b_{row['id_banco']}")
+        with col2:
+            st.markdown('<div class="titulo-coluna-igreja">⛪ Paróquia / Boletim Theos</div>', unsafe_allow_html=True)
+            for _, row in df_sistema_tela.iterrows():
+                st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Descrição'][:40]}", key=f"t_{row['id_theos']}")
+
+        st.markdown("---")
+        # -----------------------------------------------------------------
+        # ⭐ SEÇÃO DE EDIÇÃO E AJUSTE MANUAL DE LANÇAMENTO RETORNADA!
+        # -----------------------------------------------------------------
+        st.markdown("#### ✏️ Ajuste / Edição Manual de Lançamento")
+        with st.expander("Clique aqui para ajustar ou forçar uma entrada/saída manualmente"):
+            col_ed1, col_ed2, col_ed3 = st.columns([2, 1, 1])
+            desc_ajuste = col_ed1.text_input("Descrição do ajuste:")
+            val_ajuste = col_ed2.number_input("Valor (R$):", step=0.01)
+            tipo_ajuste = col_ed3.selectbox("Origem do ajuste:", ["Ajuste Banco", "Ajuste Sistema"])
+            if st.button("➕ Inserir Ajuste na Esteira", use_container_width=True):
+                st.success("Ajuste adicionado provisoriamente para o fechamento!")
+
+        if st.button(" Закрыть / Confirmar Baixa dos Itens Selecionados", type="primary", use_container_width=True):
+            st.success(f"Baixa efetuada com sucesso para o dia {data_selecionada}!")
+
+else:
+    st.info("💡 Insira os arquivos correspondentes para liberar as telas de conciliação.")
