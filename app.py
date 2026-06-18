@@ -181,13 +181,12 @@ def processar_extrato_sicoob(arquivo_bytes):
     return dados_banco_brutos, saldo_anterior_inicial, saldos_finais_por_dia
 
 def processar_sipag_csv(arquivo_bytes):
-    # Processador customizado para ler o layout SIPAG recebido com delimitador ';'
     try:
         df_sipag = pd.read_csv(io.BytesIO(arquivo_bytes), sep=';', skiprows=2)
         dados_finais = []
         for idx, row in df_sipag.iterrows():
             if len(row) < 11 or pd.isna(row.iloc[1]): continue
-            dt_str = str(row.iloc[1]).split()[0] # Pega apenas a data da transação
+            dt_str = str(row.iloc[1]).split()[0]
             try:
                 dt_f = pd.to_datetime(dt_str, dayfirst=True).strftime('%d/%m/%Y')
                 bandeira = str(row.iloc[3]).strip()
@@ -207,7 +206,6 @@ def processar_sipag_csv(arquivo_bytes):
 # FLUXO PRINCIPAL DE PROCESSAMENTO
 # =========================================================================
 if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]:
-    # Carregamento primário
     dados_b, s_ant, s_finais = processar_extrato_sicoob(st.session_state[chave_store_banco])
     
     dados_banco_finais = []
@@ -225,7 +223,6 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         })
     df_b_orig = pd.DataFrame(dados_banco_finais)
     
-    # Contrapartida do Sistema (Theos)
     dados_contrapartida = []
     df_t_bruto = pd.read_excel(io.BytesIO(st.session_state[chave_store_sistema]), skiprows=7).dropna(how='all')
     for idx_t, row in df_t_bruto.iterrows():
@@ -245,12 +242,11 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
                     })
     df_s_orig = pd.DataFrame(dados_contrapartida)
 
-    # SIPAG condicional
     df_sipag_orig = pd.DataFrame()
     if st.session_state[chave_store_sipag]:
         df_sipag_orig = processar_sipag_csv(st.session_state[chave_store_sipag])
 
-    # ⚙️ Aplicar histórico de modificações salvas na sessão (Edições, inclusões e Troca de Data)
+    # Aplicar histórico de modificações salvas
     for mod in st.session_state[chave_modificacoes]:
         if mod['acao'] == 'excluir':
             df_b_orig = df_b_orig[df_b_orig['id'] != mod['id']]
@@ -274,7 +270,6 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         data_selecionada = st.selectbox("📆 Selecione o Dia:", todas_datas, index=min(st.session_state.indice_data, len(todas_datas)-1))
         st.session_state.indice_data = todas_datas.index(data_selecionada)
 
-    # Dados do Dia
     mapa_saldos = {dia: {'Anterior': s_ant if i==0 else list(s_finais.values())[i-1], 'Final': v} for i, (dia, v) in enumerate(s_finais.items())}
     info_saldo = mapa_saldos.get(data_selecionada, {'Anterior': 0.0, 'Final': 0.0})
     df_banco_dia = df_b_orig[df_b_orig['Data'] == data_selecionada]
@@ -290,7 +285,6 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
     with aba_conciliacao:
         st.markdown(f"### Lançamentos em: <span style='color:#1e7e34;'>{data_selecionada}</span>", unsafe_allow_html=True)
         
-        # --- FILTROS INDEPENDENTES (LAYOUT IGUAL AO PRINT) ---
         c_flt1, c_flt2, c_flt3 = st.columns(3)
         filtro_banco = c_flt1.selectbox("🎯 Filtrar Extrato Sicoob:", ["Todos", "🟢 PIX RECEBIDO", "🔴 PIX ENVIADO", "🔴 PAGTO TITULO", "💳 SIPAG LOTE"], key="flt_b")
         filtro_sist = c_flt2.selectbox("🎯 Filtrar Sistema:", ["Todos", "ENTRADA", "SAÍDA"], key="flt_s")
@@ -303,7 +297,34 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         df_sipag_tela = df_sipag_orig[df_sipag_orig['Data'] == data_selecionada] if not df_sipag_orig.empty else pd.DataFrame()
         if filtro_sip != "Todos" and not df_sipag_tela.empty: df_sipag_tela = df_sipag_tela[df_sipag_tela['Tipo'] == filtro_sip]
 
-        # --- RECURSO SOLICITADO: CONCILIAÇÃO POR SELEÇÃO DINÂMICA VIA CHECKBOX ---
+        # =========================================================================
+        # 🔥 RECURSO NOVO: BOTÃO DE CONCILIAÇÃO AUTOMÁTICA (CONCILIAR TUDO)
+        # =========================================================================
+        soma_total_banco = df_banco_tela['Valor'].sum()
+        soma_total_sistema = df_sistema_tela['Valor'].sum()
+        
+        # Verifica se o dia bate sozinho de forma exata
+        dia_esta_correto = (round(soma_total_banco, 2) == round(soma_total_sistema, 2)) and (soma_total_banco != 0)
+        
+        col_auto1, col_auto2 = st.columns([2, 1])
+        with col_auto1:
+            if dia_esta_correto:
+                st.success(f"✨ **Identificado Batimento Perfeito!** O total do Extrato bate com o Boletim (R$ {soma_total_banco:,.2f}). Pronto para conciliação rápida!")
+            else:
+                st.warning(f"⚠️ **Valores Diferentes:** Extrato (R$ {soma_total_banco:,.2f}) vs Sistema (R$ {soma_total_sistema:,.2f}). Verifique se há taxas da SIPAG pendentes.")
+        
+        with col_auto2:
+            # Botão de comando rápido para liquidar o dia inteiro sem cliques manuais
+            if st.button("⚡ Conciliar Tudo Automaticamente", type="primary", use_container_width=True, help="Ignora a seleção manual e liquida todas as linhas visíveis deste dia de uma vez só."):
+                st.balloons()
+                st.success(f"✅ Fechamento em Lote executado! {len(df_banco_tela) + len(df_sistema_tela)} itens foram conciliados automaticamente.")
+                # Aqui você pode direcionar para salvar em banco de dados ou registrar no histórico da sessão
+                st.session_state[f"status_dia_{data_selecionada}"] = "CONCILIADO_TOTAL"
+                st.rerun()
+
+        st.markdown("---")
+        
+        # --- COLUNAS VISUAIS DE SELEÇÃO INDIVIDUAL (TRAZIDAS DE VOLTA) ---
         col1, col2, col3 = st.columns(3)
         
         with col1:
@@ -312,7 +333,9 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
             
             selecionados_banco = []
             for _, row in df_banco_tela.iterrows():
-                if st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Descrição'][:25]}", key=f"chk_{row['id']}"):
+                # Força checkbox marcado caso o usuário tenha rodado a conciliação total
+                valor_padrao = st.session_state.get(f"status_dia_{data_selecionada}", "") == "CONCILIADO_TOTAL"
+                if st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Descrição'][:25]}", key=f"chk_{row['id']}", value=valor_padrao):
                     selecionados_banco.append(row['Valor'])
             
             soma_banco = sum(selecionados_banco)
@@ -324,7 +347,8 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
             
             selecionados_sist = []
             for _, row in df_sistema_tela.iterrows():
-                if st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Descrição'][:25]}", key=f"chk_{row['id']}"):
+                valor_padrao = st.session_state.get(f"status_dia_{data_selecionada}", "") == "CONCILIADO_TOTAL"
+                if st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Descrição'][:25]}", key=f"chk_{row['id']}", value=valor_padrao):
                     selecionados_sist.append(row['Valor'])
             
             soma_sist = sum(selecionados_sist)
@@ -336,7 +360,8 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
                 st.info(f"📊 Total SIPAG do Dia: R$ {df_sipag_tela['Valor'].sum():,.2f}")
                 selecionados_sip = []
                 for _, row in df_sipag_tela.iterrows():
-                    if st.checkbox(f"{row['Tipo']} | R$ {row['Valor']:,.2f} | {row['Descrição'][:25]}", key=f"chk_{row['id']}"):
+                    valor_padrao = st.session_state.get(f"status_dia_{data_selecionada}", "") == "CONCILIADO_TOTAL"
+                    if st.checkbox(f"{row['Tipo']} | R$ {row['Valor']:,.2f} | {row['Descrição'][:25]}", key=f"chk_{row['id']}", value=valor_padrao):
                         selecionados_sip.append(row['Valor'])
                 soma_sip = sum(selecionados_sip)
                 st.markdown(f'<div style="background-color:#e8f5e9; padding:8px; border-radius:5px; font-weight:bold; color:#1b5e20;">🔹 Selecionados: {len(selecionados_sip)} itens | Soma Atual: R$ {soma_sip:,.2f}</div>', unsafe_allow_html=True)
@@ -360,7 +385,7 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
                 origem_convertida = 'Banco' if "Banco" in tipo_ajuste else ('Sistema' if "Sistema" in tipo_ajuste else 'Sipag')
                 st.session_state[chave_modificacoes].append({
                     'id': id_gerado, 'acao': 'inserir', 'desc': desc_ajuste.upper(),
-                    'valor': val_ajuste, 'origem': origem_convertida, 'data': dt_ajuste.strftime('%d/%m/%Y')
+                    'valor': val_ajuste, 'origem':裝rigem_convertida, 'data': dt_ajuste.strftime('%d/%m/%Y')
                 })
                 st.success("Ajuste inserido!")
                 st.rerun()
