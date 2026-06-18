@@ -300,29 +300,45 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         data_selecionada = st.selectbox("📆 Dias Pendentes de Baixa:", datas_pendentes, index=st.session_state.indice_data)
         st.session_state.indice_data = datas_pendentes.index(data_selecionada)
 
+    # Filtragem dos dados específicos do dia ativo em tela
     df_banco_dia = df_b_orig[df_b_orig['Data'] == data_selecionada]
+    df_sistema_dia = df_s_orig[df_s_orig['Data'] == data_selecionada] if not df_s_orig.empty else pd.DataFrame()
+    df_sipag_dia = df_sipag_orig[df_sipag_orig['Data'] == data_selecionada] if not df_sipag_orig.empty else pd.DataFrame()
     
+    # -------------------------------------------------------------------------
+    # 🧮 CÁLCULO INTELIGENTE DO SALDO ATUAL DO BOLETIM CONFORME LANÇAMENTOS
+    # -------------------------------------------------------------------------
+    # Pegamos o saldo inicial gravado na linha oficial do Theos para aquele dia
+    saldo_inicial_boletim = round(mapa_saldos_theos.get(data_selecionada, 0.0), 2)
+    
+    # Calculamos o impacto líquido dos lançamentos do sistema + ajustes injetados na coluna do Sistema
+    impacto_sistema = sum(row['Valor'] for _, row in df_sistema_dia.iterrows()) if not df_sistema_dia.empty else 0.0
+    
+    # O saldo recalculado do boletim é a somatória do saldo base com os eventos atuais em tela
+    saldo_boletim_calculado = round(saldo_inicial_boletim + impacto_sistema, 2)
+    
+    # Buscamos o saldo final oficial declarado pelo banco para o confronto mestre
     saldo_banco_declarado = round(mapa_saldos_banco.get(data_selecionada, 0.0), 2)
-    saldo_theos_declarado = round(mapa_saldos_theos.get(data_selecionada, 0.0), 2)
     
-    diferenca_real = round(saldo_banco_declarado - saldo_theos_declarado, 2)
+    # Confronto direto de fechamento matemático
+    diferenca_real = round(saldo_banco_declarado - saldo_boletim_calculado, 2)
     if abs(diferenca_real) < 0.02:
         diferenca_real = 0.0
 
     st.markdown("---")
     
     # =========================================================================
-    # 💰 PAINEL DE CONFRONTO DE SALDOS REAIS (BOLETIM VS EXTRATO)
+    # 💰 PAINEL DE CONFRONTO DE SALDOS DINÂMICOS (EXTRATO VS BOLETIM EM TELA)
     # =========================================================================
     col_s1, col_s2, col_s3, col_s4 = st.columns(4)
     col_s1.metric("📅 Dia em Execução", data_selecionada)
-    col_s2.metric("🏦 SALDO DO DIA (Sicoob)", f"R$ {saldo_banco_declarado:,.2f}")
-    col_s3.metric("⛪ LINHA DE SALDO (Theos)", f"R$ {saldo_theos_declarado:,.2f}")
+    col_s2.metric("🏦 Saldo do Dia (Sicoob Extrato)", f"R$ {saldo_banco_declarado:,.2f}")
+    col_s3.metric("⛪ Saldo do Boletim (Recalculado)", f"R$ {saldo_boletim_calculado:,.2f}", delta=f"Base Theos: R$ {saldo_inicial_boletim:,.2f}", delta_color="off")
     
     if diferenca_real == 0.0:
-        col_s4.metric("🎯 CONCILIAÇÃO BANCÁRIA", "✅ BATENDO", delta="Saldos 100% Iguais")
+        col_s4.metric("🎯 Confronto do Dia", "✅ BATENDO", delta="Pronto para Baixar/Lançar")
     else:
-        col_s4.metric("🎯 CONCILIAÇÃO BANCÁRIA", "⚠️ DIVERGENTE", delta=f"Dif: R$ {diferenca_real:,.2f}", delta_color="inverse")
+        col_s4.metric("🎯 Confronto do Dia", "⚠️ DIVERGENTE", delta=f"Falta Ajustar: R$ {diferenca_real:,.2f}", delta_color="inverse")
 
     aba_conciliacao, aba_historico = st.tabs(["🔄 Esteira de Conciliação Diária", "📋 Histórico de Fechamento"])
 
@@ -334,10 +350,8 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         filtro_sist = c_flt2.selectbox("🎯 Filtrar Sistema:", ["Todos", "ENTRADA", "SAÍDA"])
         
         df_banco_tela = df_banco_dia if filtro_banco == "Todos" else df_banco_dia[df_banco_dia['Tipo'] == filtro_banco]
-        df_sistema_tela = df_s_orig[df_s_orig['Data'] == data_selecionada] if not df_s_orig.empty else pd.DataFrame()
-        if filtro_sist != "Todos" and not df_sistema_tela.empty: df_sistema_tela = df_sistema_tela[df_sistema_tela['Tipo'] == filtro_sist]
-        
-        df_sipag_tela = df_sipag_orig[df_sipag_orig['Data'] == data_selecionada] if not df_sipag_orig.empty else pd.DataFrame()
+        df_sistema_tela = df_sistema_dia if filtro_sist == "Todos" else (df_sistema_dia[df_sistema_dia['Tipo'] == filtro_sist] if not df_sistema_dia.empty else pd.DataFrame())
+        df_sipag_tela = df_sipag_dia
         
         if not df_sipag_tela.empty:
             lista_ccs = sorted(df_sipag_tela['CentroCusto'].unique().tolist())
