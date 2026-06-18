@@ -7,14 +7,13 @@ import re
 import io
 import datetime
 import os
-import json  # Adicionado para salvar os ajustes estruturados no disco
+import json
 
 # =========================================================================
 # ⚙️ CONFIGURAÇÃO DA PÁGINA (DEVE SER O PRIMEIRO COMANDO STREAMLIT)
 # =========================================================================
 st.set_page_config(page_title="Conciliador Multi-Contas São Francisco", layout="wide")
 
-# Criando diretório físico para salvar os arquivos se ele não existir
 CACHE_DIR = "cache_arquivos"
 if not os.path.exists(CACHE_DIR):
     os.makedirs(CACHE_DIR)
@@ -77,7 +76,6 @@ conta_ativa = st.selectbox(
     ["Conta 161 - Geral (Theos)", "Conta 140 - Dízimo (Eclesial)", "Contas Poupança - PIX Oferta (Centros de Custo)"]
 )
 
-# Chaves de Estado Fixas na Sessão 
 chave_store_banco = f"bytes_banco_{conta_ativa}"
 chave_store_sistema = f"bytes_sistema_{conta_ativa}"
 chave_store_sipag = f"bytes_sipag_{conta_ativa}"
@@ -99,7 +97,6 @@ if chave_modificacoes not in st.session_state: st.session_state[chave_modificaco
 if chave_dias_conciliados not in st.session_state: st.session_state[chave_dias_conciliados] = []
 if chave_historico_ocultacoes not in st.session_state: st.session_state[chave_historico_ocultacoes] = []
 
-# Nomes de arquivos físicos no HD para persistência após F5
 arq_cache_banco = os.path.join(CACHE_DIR, f"banco_{conta_ativa}.cache")
 arq_cache_sistema = os.path.join(CACHE_DIR, f"sistema_{conta_ativa}.cache")
 arq_cache_sipag = os.path.join(CACHE_DIR, f"sipag_{conta_ativa}.cache")
@@ -108,14 +105,11 @@ arq_cache_nome_banco = os.path.join(CACHE_DIR, f"nome_banco_{conta_ativa}.txt")
 arq_cache_nome_sistema = os.path.join(CACHE_DIR, f"nome_sistema_{conta_ativa}.txt")
 arq_cache_nome_sipag = os.path.join(CACHE_DIR, f"nome_sipag_{conta_ativa}.txt")
 arq_cache_nome_campanha = os.path.join(CACHE_DIR, f"nome_campanha_{conta_ativa}.txt")
-
-# ARQUIVOS DE CACHE PARA MODIFICAÇÕES E ESTADO DO SISTEMA
 arq_cache_modificacoes = os.path.join(CACHE_DIR, f"ajustes_{conta_ativa}.json")
 arq_cache_dias_conciliados = os.path.join(CACHE_DIR, f"dias_ok_{conta_ativa}.json")
 arq_cache_historico_ocultacoes = os.path.join(CACHE_DIR, f"ocultados_{conta_ativa}.json")
 arq_cache_data_ativa = os.path.join(CACHE_DIR, f"data_ativa_{conta_ativa}.txt")
 
-# TENTATIVA DE RECUPERAÇÃO DOS ARQUIVOS BRUTOS APÓS REFRESH
 if st.session_state[chave_store_banco] is None and os.path.exists(arq_cache_banco):
     with open(arq_cache_banco, "rb") as f: st.session_state[chave_store_banco] = f.read()
     if os.path.exists(arq_cache_nome_banco):
@@ -136,7 +130,6 @@ if st.session_state[chave_store_campanha] is None and os.path.exists(arq_cache_c
     if os.path.exists(arq_cache_nome_campanha):
         with open(arq_cache_nome_campanha, "r", encoding="utf-8") as f: st.session_state[chave_nome_campanha] = f.read()
 
-# RECUPERAÇÃO DAS REGRAS, AJUSTES E DIAS BAIXADOS DO DISCO DURA SE EXISTIREM
 if not st.session_state[chave_modificacoes] and os.path.exists(arq_cache_modificacoes):
     try:
         with open(arq_cache_modificacoes, "r", encoding="utf-8") as f: st.session_state[chave_modificacoes] = json.load(f)
@@ -321,44 +314,47 @@ def processar_sistema_theos(arquivo_bytes):
     return dados_contrapartida, saldos_sistema_por_dia
 
 # =========================================================================
-# ⚙️ PARSER ATUALIZADO DO SIPAG COM AS SUAS COLUNAS REAIS
+# ⚙️ ENGINE SIPAG CONSOLIDADO (FILTRO NA DATA PREVISTA DE LIQUIDAÇÃO)
 # =========================================================================
 def processar_sipag_csv(arquivo_bytes):
     try:
-        # Tenta ler como Excel primeiro, se falhar cai no CSV
         try:
             df_sipag = pd.read_excel(io.BytesIO(arquivo_bytes))
         except:
             df_sipag = pd.read_csv(io.BytesIO(arquivo_bytes), sep=None, engine='python')
         
-        # Limpa espaços em branco dos nomes das colunas
+        # Remove espaços invisíveis das colunas
         df_sipag.columns = [str(c).strip() for c in df_sipag.columns]
         
         dados_finais = []
+        col_data = "Data prevista de liquidacao" if "Data prevista de liquidacao" in df_sipag.columns else "Data prevista de liquidação"
+        col_bruto = "Valor parcela bruto"
+        col_desconto = "Desconto parcela"
+        col_liquido = "Valor parcela liquido"
+        
+        if col_data not in df_sipag.columns:
+            # Caso os acentos causem problemas, tenta localização parcial
+            for c in df_sipag.columns:
+                if "PREVISTA" in c.upper() and "LIQUID" in c.upper():
+                    col_data = c
+                    break
+
         for idx, row in df_sipag.iterrows():
-            # Mapeamento dinâmico baseado estritamente na sua imagem real
-            col_data = "Data prevista de liquidação"
-            col_bruto = "Valor parcela bruto"
-            col_desconto = "Desconto parcela"
-            col_liquido = "Valor parcela liquido"
-            
-            # Validação se as colunas fundamentais existem na linha
             if col_data in df_sipag.columns and pd.notna(row[col_data]):
-                dt_str = str(row[col_data]).split()[0]
+                dt_str = str(row[col_data]).strip().split()[0]
                 try:
                     dt_f = pd.to_datetime(dt_str, dayfirst=True).strftime('%d/%m/%Y')
                     
-                    # Converte os valores tratando a formatação de moeda R$
                     v_bruto = converter_valor_extrato(row[col_bruto]) if col_bruto in df_sipag.columns else 0.0
                     v_taxa = converter_valor_extrato(row[col_desconto]) if col_desconto in df_sipag.columns else 0.0
                     v_liquido = converter_valor_extrato(row[col_liquido]) if col_liquido in df_sipag.columns else v_bruto
                     
                     dados_finais.append({
                         'id': f"SIPAG_{idx}", 
-                        'Data': dt_f, 
+                        'Data': dt_f,  # Mapeado diretamente pela Data Prevista de Liquidação
                         'Tipo': "💳 LOTE SIPAG",
                         'Descrição': "LIQUIDAÇÃO PREVISTA DE CARTÃO", 
-                        'Valor': v_liquido, 
+                        'Valor': abs(v_liquido), 
                         'ValorBruto': abs(v_bruto), 
                         'Taxa': abs(v_taxa), 
                         'ValorLiquido': abs(v_liquido), 
@@ -450,16 +446,15 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
     if st.session_state[chave_store_campanha]:
         df_campanha_orig = processar_campanha_generic(st.session_state[chave_store_campanha], st.session_state[chave_nome_campanha])
 
-    # Aplicando modificações históricas que foram carregadas do disco
     for mod in st.session_state[chave_modificacoes]:
         if mod['acao'] == 'excluir':
             df_b_orig = df_b_orig[df_b_orig['id'] != mod['id']]
             if not df_s_orig.empty: df_s_orig = df_s_orig[df_s_orig['id'] != mod['id']]
-        elif mod['acao'] == 'editar':
+        elif mod['acao'] == 'editar' or mod['acao'] == 'edit':
             df_b_orig.loc[df_b_orig['id'] == mod['id'], ['Descrição', 'Valor', 'Data']] = [mod['desc'], mod['valor'], mod['data']]
             if not df_s_orig.empty: df_s_orig.loc[df_s_orig['id'] == mod['id'], ['Descrição', 'Valor', 'Data']] = [mod['desc'], mod['valor'], mod['data']]
         elif mod['acao'] == 'inserir':
-            nova_linha = pd.DataFrame([{'id': mod['id'], 'Data': mod['data'], 'Tipo': '🔹 AJUSTE', 'Descrição': mod['desc'], 'Valor': mod['valor'], 'Origem': mod['origem'], 'CentroCusto': mod.get('cc', 'Ajuste')}])
+            nova_linha = pd.DataFrame([{'id': mod['id'], 'Data': mod['data'], 'Tipo': '🔹 AJUSTE', 'Descrição': mod['desc'], 'Valor': mod['valor'], 'Origem': mod['origem']}])
             if mod['origem'] == 'Banco': df_b_orig = pd.concat([df_b_orig, nova_linha], ignore_index=True)
             elif mod['origem'] == 'Sistema': df_s_orig = pd.concat([df_s_orig, nova_linha], ignore_index=True)
 
@@ -615,9 +610,7 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
                 with open(arq_cache_dias_conciliados, "w", encoding="utf-8") as f: json.dump(st.session_state[chave_dias_conciliados], f, ensure_ascii=False)
                 st.rerun()
 
-        # =========================================================================
-        # 🛠️ CENTRAL DE AJUSTES E LANÇAMENTOS (PRESERVADA!)
-        # =========================================================================
+        # CENTRAL DE AJUSTES E LANÇAMENTOS
         st.markdown("## 📝 Central de Ajustes e Lançamentos")
         sub_aba_inserir, sub_aba_modificar = st.tabs(["➕ Inserir Novo Ajuste Manual", "📝 Modificar / Remover Lançamentos Existentes"])
 
@@ -683,13 +676,14 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
     # 📊 CONSULTA DE CARTÕES ISOLADA
     with aba_cartoes:
         st.markdown("### 📊 Visualizador Dinâmico de Cartões e Recebimentos")
-        st.info("Esta seção serve para consulta e filtros rápidos dos relatórios secundários.")
+        st.info("Esta seção serve para consulta e filtros rápidos dos relatórios secundários baseados na data ativa do painel.")
         
         col_vis1, col_vis2 = st.columns(2)
         
         with col_vis1:
             st.markdown('<div class="titulo-coluna-sipag">💳 Relatório Detalhado SIPAG</div>', unsafe_allow_html=True)
             if not df_sipag_orig.empty:
+                # O FILTRO AGORA CRUZA EXATAMENTE COM A DATA PREVISTA DE LIQUIDAÇÃO PROCESSADA
                 df_sipag_dia = df_sipag_orig[df_sipag_orig['Data'] == data_selecionada].copy() if data_selecionada else df_sipag_orig
                 
                 if not df_sipag_dia.empty:
@@ -703,7 +697,7 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
                                 f'</div>', unsafe_allow_html=True)
                     st.dataframe(df_sipag_dia[['Data', 'ValorBruto', 'Taxa', 'ValorLiquido']], use_container_width=True)
                 else: 
-                    st.caption("Nenhum dado previsto do SIPAG para esta data.")
+                    st.caption(f"Nenhum registro localizado no SIPAG com liquidação prevista para {data_selecionada}.")
             else: 
                 st.warning("Aguardando upload da planilha do SIPAG...")
 
