@@ -1,57 +1,62 @@
-# Chaves de Estado Fixas na Sessão (Persistem ao F5)
+import logging
+logging.getLogger("asyncio").setLevel(logging.CRITICAL)  # Silencia avisos no terminal
+
+import streamlit as st
+import pandas as pd
+import re
+import io
+import datetime
+
+# 1. Configuração da página em modo AMPLO
+st.set_page_config(page_title="Conciliador Multi-Contas São Francisco", layout="wide")
+
+# =========================================================================
+# 🔐 SISTEMA DE SEGURANÇA VIA URL PARAMS
+# =========================================================================
+if "token" in st.query_params and st.query_params["token"] == "sf_2026_authed":
+    st.session_state.autenticado = True
+    st.session_state.usuario_logado = st.query_params.get("user", "secretaria")
+else:
+    if "autenticado" not in st.session_state: st.session_state.autenticado = False
+    if "usuario_logado" not in st.session_state: st.session_state.usuario_logado = ""
+
+if not st.session_state.autenticado:
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    col_log1, col_log2, col_log3 = st.columns([1, 2, 1])
+    with col_log2:
+        st.markdown("""
+            <div style="background-color: #f8f9fa; padding: 30px; border-radius: 12px; border: 1px solid #dee2e6; box-shadow: 0px 4px 10px rgba(0,0,0,0.05);">
+                <h2 style="text-align: center; color: #003366; margin-bottom: 5px;">⛪ Paróquia São Francisco de Assis</h2>
+                <p style="text-align: center; color: #6c757d; font-size: 14px; margin-bottom: 25px;">Acesso Restrito ao Painel de Conciliação Financeira</p>
+            </div>
+        """, unsafe_allow_html=True)
+        usuario_input = st.text_input("👤 Nome de Usuário:")
+        senha_input = st.text_input("🔑 Senha de Acesso:", type="password")
+        if st.button("🔓 Entrar no Sistema", type="primary", use_container_width=True):
+            if usuario_input == "secretaria" and senha_input == "sf@2026":
+                st.session_state.autenticado = True
+                st.session_state.usuario_logado = usuario_input
+                st.query_params["token"] = "sf_2026_authed"
+                st.query_params["user"] = usuario_input
+                st.rerun()
+            else: st.error("❌ Usuário ou senha incorretos!")
+    st.stop()
+
+# 2. Título do Sistema
+st.title("⛪ Sistema Integrado de Conciliação - Paróquia São Francisco de Assis")
+
+# 3. CRUCIAL: Definir a conta ativa ANTES de criar as chaves de memória
+conta_ativa = st.selectbox(
+    "🏦 Escolha a Conta Bancária que deseja conciliar agora:",
+    ["Conta 161 - Geral (Theos)", "Conta 140 - Dízimo (Eclesial)", "Contas Poupança - PIX Oferta (Centros de Custo)"]
+)
+
+# 4. Agora o Python sabe o que é 'conta_ativa' e não vai gerar erro!
 chave_store_banco = f"bytes_banco_{conta_ativa}"
 chave_store_sistema = f"bytes_sistema_{conta_ativa}"
 chave_store_sipag = f"bytes_sipag_{conta_ativa}"
 chave_nome_banco = f"nome_banco_{conta_ativa}"
 chave_nome_sistema = f"nome_sistema_{conta_ativa}"
 chave_nome_sipag = f"nome_sipag_{conta_ativa}"
-
-# Inicialização segura na sessão se não existirem
-if chave_store_banco not in st.session_state: st.session_state[chave_store_banco] = None
-if chave_store_sistema not in st.session_state: st.session_state[chave_store_sistema] = None
-if chave_store_sipag not in st.session_state: st.session_state[chave_store_sipag] = None
-
-st.markdown("### 📥 Carregar Arquivos do Período")
-col_up1, col_up2, col_up3 = st.columns(3)
-
-with col_up1:
-    # Mudamos o 'key' do widget para não colidir diretamente com o armazenamento
-    u_extrato = st.file_uploader("📂 Arraste o Extrato do Sicoob:", type=["xlsx", "xls", "pdf"], key=f"widget_up_banco_{conta_ativa}")
-    
-    # ATENÇÃO: Só atualiza a sessão se o usuário REALMENTE enviou um arquivo novo. 
-    # Se u_extrato for None (como após um F5), mantém o que já estava guardado!
-    if u_extrato is not None:
-        st.session_state[chave_store_banco] = u_extrato.getvalue()
-        st.session_state[chave_nome_banco] = u_extrato.name
-        
-    if st.session_state[chave_store_banco] is not None:
-        st.success(f"🟢 Memória Ativa: {st.session_state.get(chave_nome_banco, 'Extrato Guardado')}")
-
-with col_up2:
-    u_sistema = st.file_uploader("📂 Arraste o Relatório do Boletim / Sistema:", type=["xlsx", "xls", "csv"], key=f"widget_up_sist_{conta_ativa}")
-    if u_sistema is not None:
-        st.session_state[chave_store_sistema] = u_sistema.getvalue()
-        st.session_state[chave_nome_sistema] = u_sistema.name
-        
-    if st.session_state[chave_store_sistema] is not None:
-        st.success(f"🟢 Memória Ativa: {st.session_state.get(chave_nome_sistema, 'Sistema Guardado')}")
-
-with col_up3:
-    u_sipag = st.file_uploader("📂 Planilha do Cartão SIPAG (CSV):", type=["csv", "xlsx"], key=f"widget_up_sipag_{conta_ativa}")
-    if u_sipag is not None:
-        st.session_state[chave_store_sipag] = u_sipag.getvalue()
-        st.session_state[chave_nome_sipag] = u_sipag.name
-        
-    if st.session_state[chave_store_sipag] is not None:
-        st.success(f"🟢 Memória Ativa: {st.session_state.get(chave_nome_sipag, 'SIPAG Guardada')}")
-
-# Botão para limpar a memória explicitamente se o usuário quiser trocar os arquivos
-if st.session_state[chave_store_banco] or st.session_state[chave_store_sistema] or st.session_state[chave_store_sipag]:
-    if st.button("🗑️ Trocar / Limpar Arquivos da Tela", use_container_width=True):
-        st.session_state[chave_store_banco] = None
-        st.session_state[chave_store_sistema] = None
-        st.session_state[chave_store_sipag] = None
-        st.session_state[chave_nome_banco] = None
-        st.session_state[chave_nome_sistema] = None
-        st.session_state[chave_nome_sipag] = None
-        st.rerun()
+chave_modificacoes = f"modificacoes_ajustes_{conta_ativa}"
+chave_dias_conciliados = f"dias_conciliados_{conta_ativa}"
