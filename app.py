@@ -181,7 +181,7 @@ with col_up2:
         st.caption(f"✅ Boletim: `{st.session_state.get(chave_nome_sistema, 'Arquivo Sistema')}`")
 
 with col_up3:
-    u_sipag = st.file_uploader("📂 Planilha Cartão SIPAG (CSV):", type=["csv", "xlsx"], key=f"widget_up_sipag_{conta_ativa}")
+    u_sipag = st.file_uploader("📂 Planilha Cartão SIPAG (CSV/XLSX):", type=["csv", "xlsx"], key=f"widget_up_sipag_{conta_ativa}")
     if u_sipag is not None:
         conteudo = u_sipag.getvalue()
         st.session_state[chave_store_sipag] = conteudo
@@ -320,32 +320,56 @@ def processar_sistema_theos(arquivo_bytes):
             
     return dados_contrapartida, saldos_sistema_por_dia
 
+# =========================================================================
+# ⚙️ PARSER ATUALIZADO DO SIPAG COM AS SUAS COLUNAS REAIS
+# =========================================================================
 def processar_sipag_csv(arquivo_bytes):
     try:
-        df_sipag = pd.read_csv(io.BytesIO(arquivo_bytes), sep=';', skiprows=2)
+        # Tenta ler como Excel primeiro, se falhar cai no CSV
+        try:
+            df_sipag = pd.read_excel(io.BytesIO(arquivo_bytes))
+        except:
+            df_sipag = pd.read_csv(io.BytesIO(arquivo_bytes), sep=None, engine='python')
+        
+        # Limpa espaços em branco dos nomes das colunas
+        df_sipag.columns = [str(c).strip() for c in df_sipag.columns]
+        
         dados_finais = []
         for idx, row in df_sipag.iterrows():
-            if len(row) < 14 or pd.isna(row.iloc[1]): continue
-            dt_str = str(row.iloc[1]).split()[0]
-            try:
-                dt_f = pd.to_datetime(dt_str, dayfirst=True).strftime('%d/%m/%Y')
-                bandeira = str(row.iloc[3]).strip()
-                forma = str(row.iloc[4]).strip()
-                
-                v_bruto = converter_valor_extrato(row.iloc[9])
-                v_taxa = converter_valor_extrato(row.iloc[11]) if len(row) > 11 else 0.0
-                v_liquido = converter_valor_extrato(row.iloc[12]) if len(row) > 12 else v_bruto
-                
-                cc_valores = [str(val).strip() for val in row.values if pd.notna(val)]
-                centro_custo = cc_valores[-1] if len(cc_valores) > 0 else "NÃO INFORMADO"
-                
-                dados_finais.append({
-                    'id': f"SIPAG_{idx}", 'Data': dt_f, 'Tipo': f"💳 LOTE {bandeira.upper()}",
-                    'Descrição': f"CARTÃO {forma.upper()}", 'Valor': v_bruto, 'ValorBruto': v_bruto, 'Taxa': v_taxa, 'ValorLiquido': v_liquido, 'Origem': 'Sipag', 'CentroCusto': centro_custo
-                })
-            except: continue
+            # Mapeamento dinâmico baseado estritamente na sua imagem real
+            col_data = "Data prevista de liquidação"
+            col_bruto = "Valor parcela bruto"
+            col_desconto = "Desconto parcela"
+            col_liquido = "Valor parcela liquido"
+            
+            # Validação se as colunas fundamentais existem na linha
+            if col_data in df_sipag.columns and pd.notna(row[col_data]):
+                dt_str = str(row[col_data]).split()[0]
+                try:
+                    dt_f = pd.to_datetime(dt_str, dayfirst=True).strftime('%d/%m/%Y')
+                    
+                    # Converte os valores tratando a formatação de moeda R$
+                    v_bruto = converter_valor_extrato(row[col_bruto]) if col_bruto in df_sipag.columns else 0.0
+                    v_taxa = converter_valor_extrato(row[col_desconto]) if col_desconto in df_sipag.columns else 0.0
+                    v_liquido = converter_valor_extrato(row[col_liquido]) if col_liquido in df_sipag.columns else v_bruto
+                    
+                    dados_finais.append({
+                        'id': f"SIPAG_{idx}", 
+                        'Data': dt_f, 
+                        'Tipo': "💳 LOTE SIPAG",
+                        'Descrição': "LIQUIDAÇÃO PREVISTA DE CARTÃO", 
+                        'Valor': v_liquido, 
+                        'ValorBruto': abs(v_bruto), 
+                        'Taxa': abs(v_taxa), 
+                        'ValorLiquido': abs(v_liquido), 
+                        'Origem': 'Sipag', 
+                        'CentroCusto': "GERAL SIPAG"
+                    })
+                except: 
+                    continue
         return pd.DataFrame(dados_finais)
-    except: return pd.DataFrame()
+    except: 
+        return pd.DataFrame()
 
 def processar_campanha_generic(arquivo_bytes, nome_arquivo):
     try:
@@ -592,7 +616,7 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
                 st.rerun()
 
         # =========================================================================
-        # 🛠️ CENTRAL DE AJUSTES E LANÇAMENTOS (RESTAURADA AQUI POR COMPLETO!)
+        # 🛠️ CENTRAL DE AJUSTES E LANÇAMENTOS (PRESERVADA!)
         # =========================================================================
         st.markdown("## 📝 Central de Ajustes e Lançamentos")
         sub_aba_inserir, sub_aba_modificar = st.tabs(["➕ Inserir Novo Ajuste Manual", "📝 Modificar / Remover Lançamentos Existentes"])
@@ -626,7 +650,6 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
                 item_selecionado = st.selectbox("Escolha qual lançamento deseja alterar/remover hoje:", opcoes_alterar)
                 id_alvo = item_selecionado.split(" | ID: ")[-1]
                 
-                # Encontra o item original para preencher os padrões
                 linha_alvo = None
                 if not df_banco_dia.empty and id_alvo in df_banco_dia['id'].values:
                     linha_alvo = df_banco_dia[df_banco_dia['id'] == id_alvo].iloc[0]
@@ -660,7 +683,7 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
     # 📊 CONSULTA DE CARTÕES ISOLADA
     with aba_cartoes:
         st.markdown("### 📊 Visualizador Dinâmico de Cartões e Recebimentos")
-        st.info("Esta seção não altera o extrato ou boleto. Serve apenas para consulta e filtros rápidos dos relatórios secundários.")
+        st.info("Esta seção serve para consulta e filtros rápidos dos relatórios secundários.")
         
         col_vis1, col_vis2 = st.columns(2)
         
@@ -669,23 +692,20 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
             if not df_sipag_orig.empty:
                 df_sipag_dia = df_sipag_orig[df_sipag_orig['Data'] == data_selecionada].copy() if data_selecionada else df_sipag_orig
                 
-                lista_cc_sipag = sorted(df_sipag_dia['CentroCusto'].unique().tolist()) if not df_sipag_dia.empty else []
-                cc_sel_sipag = st.multiselect("Filtrar Centro de Custo (SIPAG):", options=lista_cc_sipag, default=lista_cc_sipag, key=f"ms_cc_sipag_{data_selecionada}")
-                
-                df_sipag_f = df_sipag_dia[df_sipag_dia['CentroCusto'].isin(cc_sel_sipag)] if not df_sipag_dia.empty else pd.DataFrame()
-                
-                if not df_sipag_f.empty:
-                    s_bruto = sum(df_sipag_f['ValorBruto'])
-                    s_taxa = sum(df_sipag_f['Taxa'])
-                    s_liquido = sum(df_sipag_f['ValorLiquido'])
+                if not df_sipag_dia.empty:
+                    s_bruto = sum(df_sipag_dia['ValorBruto'])
+                    s_taxa = sum(df_sipag_dia['Taxa'])
+                    s_liquido = sum(df_sipag_dia['ValorLiquido'])
                     st.markdown(f'<div class="caixa-soma" style="font-size:13px; text-align:left;">'
-                                f'▪️ <b>Bruto Total:</b> R$ {s_bruto:,.2f}<br>'
-                                f'▪️ <b>Taxa Total:</b> R$ {s_taxa:,.2f}<br>'
-                                f'▪️ <b>Líquido Total:</b> R$ {s_liquido:,.2f}'
+                                f'▪️ <b>Valor Parcela Bruto Total:</b> R$ {s_bruto:,.2f}<br>'
+                                f'▪️ <b>Desconto Parcela Total:</b> R$ {s_taxa:,.2f}<br>'
+                                f'▪️ <b>Valor Parcela Líquido Total:</b> R$ {s_liquido:,.2f}'
                                 f'</div>', unsafe_allow_html=True)
-                    st.dataframe(df_sipag_f[['Data', 'CentroCusto', 'Tipo', 'ValorBruto', 'Taxa', 'ValorLiquido']], use_container_width=True)
-                else: st.caption("Nenhum dado encontrado para os filtros selecionados.")
-            else: st.warning("Aguardando upload do CSV do SIPAG...")
+                    st.dataframe(df_sipag_dia[['Data', 'ValorBruto', 'Taxa', 'ValorLiquido']], use_container_width=True)
+                else: 
+                    st.caption("Nenhum dado previsto do SIPAG para esta data.")
+            else: 
+                st.warning("Aguardando upload da planilha do SIPAG...")
 
         with col_vis2:
             st.markdown('<div class="titulo-coluna-campanha">🎁 Relatório de Cartões da Campanha</div>', unsafe_allow_html=True)
