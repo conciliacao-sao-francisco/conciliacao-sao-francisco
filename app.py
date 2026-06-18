@@ -135,7 +135,6 @@ def processar_extrato_sicoob(arquivo_bytes):
     saldo_anterior_inicial = 0.0
     saldos_finais_por_dia = {}
     
-    # Mapeia saldos reais descritos nas linhas do arquivo do Sicoob
     for _, row in df_s_bruto.iterrows():
         if len(row) < 4: continue
         historico = str(row.iloc[2]).strip().upper()
@@ -169,6 +168,40 @@ def processar_extrato_sicoob(arquivo_bytes):
     if linha_mestre: dados_banco_brutos.append(linha_mestre)
     return dados_banco_brutos, saldo_anterior_inicial, saldos_finais_por_dia
 
+def processar_sistema_theos(arquivo_bytes):
+    df_t_bruto = pd.read_excel(io.BytesIO(arquivo_bytes), skiprows=7).dropna(how='all')
+    dados_contrapartida = []
+    saldos_sistema_por_dia = {}
+    
+    # Roda a planilha buscando lançamentos e acumula saldos se houver coluna indicativa
+    for idx_t, row in df_t_bruto.iterrows():
+        if len(row) < 23: continue
+        dt_val = row.iloc[0]
+        if pd.notna(dt_val) and ('-' in str(dt_val) or '/' in str(dt_val)):
+            desc = str(row.iloc[9]).strip()
+            ent = float(row.iloc[16]) if pd.notna(row.iloc[16]) else 0.0
+            sai = float(row.iloc[22]) if pd.notna(row.iloc[22]) else 0.0
+            v_liq = ent - sai
+            
+            dt_obj = pd.to_datetime(str(dt_val)[:10], errors='coerce')
+            if pd.notna(dt_obj):
+                dt_f = dt_obj.strftime('%d/%m/%Y')
+                
+                # Se for linha de movimentação padrão
+                if v_liq != 0 and "SUBTOTAL" not in desc.upper() and "SALDO" not in desc.upper():
+                    dados_contrapartida.append({
+                        'id': f"T_{idx_t}", 'Data': dt_f,
+                        'Tipo': "ENTRADA" if v_liq > 0 else "SAÍDA", 'Descrição': desc, 'Valor': round(v_liq, 2), 'Origem': 'Sistema'
+                    })
+                
+                # Captura de Saldo Acumulado do Dia na linha (Comum na penúltima/última coluna do Theos)
+                # Altere o índice numérico abaixo caso a coluna de saldo mude no seu layout do Theos
+                if len(row) >= 24 and pd.notna(row.iloc[-1]) and ("SUBTOTAL" in desc.upper() or "SALDO" in desc.upper()):
+                    try: saldos_sistema_por_dia[dt_f] = float(row.iloc[-1])
+                    except: pass
+                    
+    return dados_contrapartida, saldos_sistema_por_dia
+
 def processar_sipag_csv(arquivo_bytes):
     try:
         df_sipag = pd.read_csv(io.BytesIO(arquivo_bytes), sep=';', skiprows=2)
@@ -196,6 +229,7 @@ def processar_sipag_csv(arquivo_bytes):
 # Processamento Principal usando a memória segura
 if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]:
     dados_b, s_inicial, mapa_saldos_reais = processar_extrato_sicoob(st.session_state[chave_store_banco])
+    dados_t, mapa_saldos_sistema = processar_sistema_theos(st.session_state[chave_store_sistema])
     
     dados_banco_finais = []
     for idx, item in enumerate(dados_b):
@@ -211,25 +245,7 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
             'Descrição': item['Histórico'] + " " + item['Detalhes'][:40], 'Valor': item['Valor'], 'Origem': 'Banco'
         })
     df_b_orig = pd.DataFrame(dados_banco_finais)
-    
-    dados_contrapartida = []
-    df_t_bruto = pd.read_excel(io.BytesIO(st.session_state[chave_store_sistema]), skiprows=7).dropna(how='all')
-    for idx_t, row in df_t_bruto.iterrows():
-        if len(row) < 23: continue
-        dt_val = row.iloc[0]
-        if pd.notna(dt_val) and ('-' in str(dt_val) or '/' in str(dt_val)):
-            desc = str(row.iloc[9]).strip()
-            ent = float(row.iloc[16]) if pd.notna(row.iloc[16]) else 0.0
-            sai = float(row.iloc[22]) if pd.notna(row.iloc[22]) else 0.0
-            v_liq = ent - sai
-            if v_liq != 0 and "SUBTOTAL" not in desc.upper():
-                dt_obj = pd.to_datetime(str(dt_val)[:10], errors='coerce')
-                if pd.notna(dt_obj):
-                    dados_contrapartida.append({
-                        'id': f"T_{idx_t}", 'Data': dt_obj.strftime('%d/%m/%Y'),
-                        'Tipo': "ENTRADA" if v_liq > 0 else "SAÍDA", 'Descrição': desc, 'Valor': round(v_liq, 2), 'Origem': 'Sistema'
-                    })
-    df_s_orig = pd.DataFrame(dados_contrapartida)
+    df_s_orig = pd.DataFrame(dados_t)
 
     df_sipag_orig = pd.DataFrame()
     if st.session_state[chave_store_sipag]:
@@ -273,17 +289,30 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
 
     df_banco_dia = df_b_orig[df_b_orig['Data'] == data_selecionada]
     
-    # Busca o Saldo Final Real do dia capturado na planilha do banco
+    # Resgate dos Saldos de Fechamento do Dia do Banco e do Sistema
     saldo_final_extrato_dia = mapa_saldos_reais.get(data_selecionada, 0.0)
     
+    # Se o sistema não tiver um saldo explícito mapeado em linha, calcula o saldo dinâmico acumulativo
+    saldo_final_sistema_dia = mapa_saldos_sistema.get(data_selecionada, 0.0)
+    if saldo_final_sistema_dia == 0.0 and not df_s_orig.empty:
+        df_ate_hoje = df_s_orig[pd.to_datetime(df_s_orig['Data'], dayfirst=True) <= pd.to_datetime(data_selecionada, dayfirst=True)]
+        saldo_final_sistema_dia = df_ate_hoje['Valor'].sum()
+
     st.markdown("---")
+    
     # =========================================================================
-    # 💰 NOVAS MÉTRICAS COM SALDO CONFORME O EXTRATO BANCÁRIO REAL DO SICOOB
+    # 💰 PAINEL DE MÉTRICAS COMPARTILHADO: BANCO VS SISTEMA (THEOS)
     # =========================================================================
-    col_s1, col_s2, col_s3 = st.columns(3)
-    col_s1.metric("🔄 Movimentação do Dia (Líquida)", f"R$ {df_banco_dia['Valor'].sum():,.2f}")
-    col_s2.metric("🏦 SALDO REAL DO EXTRATO (Sicoob)", f"R$ {saldo_final_extrato_dia:,.2f}", help="Saldo Oficial registrado ao final deste dia no extrato do Sicoob.")
-    col_s3.metric("📅 Dia em Execução", data_selecionada)
+    col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+    col_s1.metric("📅 Dia em Execução", data_selecionada)
+    col_s2.metric("🔄 Movimentação do Dia", f"R$ {df_banco_dia['Valor'].sum():,.2f}")
+    col_s3.metric("🏦 SALDO NO EXTRATO (Sicoob)", f"R$ {saldo_final_extrato_dia:,.2f}")
+    
+    # Destaca em verde se os saldos forem iguais, ou mantém padrão
+    if abs(saldo_final_extrato_dia - saldo_final_sistema_dia) < 0.05:
+        col_s4.metric("⛪ SALDO NO SISTEMA (Theos)", f"R$ {saldo_final_sistema_dia:,.2f}", delta="✅ BATENDO!")
+    else:
+        col_s4.metric("⛪ SALDO NO SISTEMA (Theos)", f"R$ {saldo_final_sistema_dia:,.2f}", delta="⚠️ Divergência")
 
     aba_conciliacao, aba_historico = st.tabs(["🔄 Esteira de Conciliação Diária", "📋 Histórico de Fechamento"])
 
@@ -295,8 +324,8 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         filtro_sist = c_flt2.selectbox("🎯 Filtrar Sistema:", ["Todos", "ENTRADA", "SAÍDA"])
         
         df_banco_tela = df_banco_dia if filtro_banco == "Todos" else df_banco_dia[df_banco_dia['Tipo'] == filtro_banco]
-        df_sistema_tela = df_s_orig[df_s_orig['Data'] == data_selecionada]
-        if filtro_sist != "Todos": df_sistema_tela = df_sistema_tela[df_sistema_tela['Tipo'] == filtro_sist]
+        df_sistema_tela = df_s_orig[df_s_orig['Data'] == data_selecionada] if not df_s_orig.empty else pd.DataFrame()
+        if filtro_sist != "Todos" and not df_sistema_tela.empty: df_sistema_tela = df_sistema_tela[df_sistema_tela['Tipo'] == filtro_sist]
         
         df_sipag_tela = df_sipag_orig[df_sipag_orig['Data'] == data_selecionada] if not df_sipag_orig.empty else pd.DataFrame()
         
@@ -310,7 +339,6 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
             )
             df_sipag_tela = df_sipag_tela[df_sipag_tela['CentroCusto'].isin(cc_selecionados)]
 
-        # Lógica Avançar e Sumir da tela imediatamente
         st.markdown("<br>", unsafe_allow_html=True)
         col_auto1, col_auto2 = st.columns([2, 1])
         
@@ -334,8 +362,11 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
                 
         with col2:
             st.markdown('<div class="titulo-coluna-igreja">⛪ Paróquia / Boletim Theos</div>', unsafe_allow_html=True)
-            for _, row in df_sistema_tela.iterrows():
-                st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Descrição'][:25]}", key=f"chk_{row['id']}", value=True)
+            if not df_sistema_tela.empty:
+                for _, row in df_sistema_tela.iterrows():
+                    st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Descrição'][:25]}", key=f"chk_{row['id']}", value=True)
+            else:
+                st.warning("Sem registros no sistema para este dia.")
 
         with col3:
             st.markdown('<div class="titulo-coluna-sipag">💳 Conferência Cartão SIPAG</div>', unsafe_allow_html=True)
@@ -355,7 +386,7 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
             desc_ajuste = col_ed1.text_input("Descrição do ajuste:", key="ins_desc")
             val_ajuste = col_ed2.number_input("Valor (R$):", step=0.01, key="ins_val")
             tipo_ajuste = col_ed3.selectbox("Origem do ajuste:", ["Ajuste Banco", "Ajuste Sistema", "Ajuste Sipag"], key="ins_orig")
-            dt_ajuste = col_ed4.date_input("Data do Lançamento:", value=datetime.date(2026, 4, 1), key="ins_data")
+            dt_ajuste = col_ed4.date_input("Data do Lançamento:", value=datetime.date(2026, 6, 1), key="ins_data")
             
             if st.button("➕ Inserir Ajuste na Linha do Tempo", use_container_width=True):
                 id_gerado = f"M_INS_{len(st.session_state[chave_modificacoes])}"
@@ -390,7 +421,7 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
                         'id': item_selecionado, 'acao': 'editar', 'desc': nova_desc.upper(), 
                         'valor': novo_val, 'data': nova_data.strftime('%d/%m/%Y')
                     })
-                    st.success("Lançamento updated!")
+                    st.success("Lançamento atualizado!")
                     st.rerun()
                 if col_b_ed2.button("🗑️ Remover permanentemente este item", use_container_width=True):
                     st.session_state[chave_modificacoes] = [m for m in st.session_state[chave_modificacoes] if m['id'] != item_selecionado]
