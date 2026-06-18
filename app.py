@@ -15,7 +15,6 @@ except ImportError:
 
 try:
     from streamlit_cookies_controller import CookieController
-    # Inicializa o controlador de cookies de forma persistente no estado da sessão
     if "cookies_controller" not in st.session_state:
         st.session_state.cookies_controller = CookieController()
     controller = st.session_state.cookies_controller
@@ -26,14 +25,14 @@ except:
 st.set_page_config(page_title="Conciliador Multi-Contas São Francisco", layout="wide")
 
 # =========================================================================
-# 🔐 SISTEMA DE SEGURANÇA AVANÇADO (PERSISTÊNCIA POR COOKIES - 30 DIAS)
+# 🔐 SISTEMA DE SEGURANÇA CORRIGIDO (BLINDADO CONTRA F5)
 # =========================================================================
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
 if "usuario_logado" not in st.session_state:
     st.session_state.usuario_logado = ""
 
-# Tenta recuperar o login salvo se a sessão sumir no F5
+# Se o usuário já se autenticou nesta sessão do navegador, mantém True direto (ignora o delay do cookie)
 if not st.session_state.autenticado and controller:
     try:
         cookie_login = controller.get("paroquia_sf_auth")
@@ -287,12 +286,11 @@ def carregar_dados_da_sessao(modo_conta, bytes_banco, bytes_sistema):
     return pd.DataFrame(dados_banco_finais), pd.DataFrame(dados_contrapartida), mapa_saldos
 
 # =========================================================================
-# 💾 INTERCEPTADOR E PERSISTIDOR DE UPLOADS (CATCH DE F5)
+# 💾 INTERCEPTADOR E PERSISTIDOR DE UPLOADS (A PROVA DE F5)
 # =========================================================================
 st.markdown("### 📥 Carregar Arquivos do Período")
 col_up1, col_up2 = st.columns(2)
 
-# Chaves de armazenamento na sessão
 chave_store_banco = f"store_bytes_banco_{conta_ativa}"
 chave_store_sistema = f"store_bytes_sistema_{conta_ativa}"
 chave_name_banco = f"store_name_banco_{conta_ativa}"
@@ -314,7 +312,7 @@ with col_up1:
         st.session_state[chave_name_banco] = u_extrato.name
     
     if st.session_state[chave_store_banco]:
-        st.caption(f"📦 **Arquivo ativo em memória:** {st.session_state[chave_name_banco]}")
+        st.success(f"📦 **Arquivo do Banco Ativo:** {st.session_state[chave_name_banco]}")
 
 with col_up2:
     if "161" in conta_ativa:
@@ -329,13 +327,13 @@ with col_up2:
         st.session_state[chave_name_sistema] = u_sistema.name
         
     if "Poupança" not in conta_ativa and st.session_state[chave_store_sistema]:
-        st.caption(f"📦 **Arquivo ativo em memória:** {st.session_state[chave_name_sistema]}")
+        st.success(f"📦 **Arquivo do Sistema Ativo:** {st.session_state[chave_name_sistema]}")
     elif "Poupança" in conta_ativa:
         st.info("💡 Contas Poupança necessitam apenas do extrato bancário em formato PDF.")
 
 # Botão para limpar arquivos e resetar a memória se necessário
 if st.session_state[chave_store_banco] or st.session_state[chave_store_sistema]:
-    if st.button("🗑️ Limpar Arquivos da Memória", use_container_width=True):
+    if st.button("🗑️ Limpar Arquivos da Memória / Trocar Arquivos", use_container_width=True):
         st.session_state[chave_store_banco] = None
         st.session_state[chave_store_sistema] = None
         st.session_state[chave_name_banco] = ""
@@ -351,7 +349,6 @@ if "Poupança" in conta_ativa and st.session_state[chave_store_banco]:
         
     if dados_pdf:
         df_p = pd.DataFrame(dados_pdf)
-        st.success("✅ Dados carregados com sucesso do histórico em cache!")
         st.markdown("---")
         st.subheader("📊 Relatório de Repasse Curial (Filtro de Rendimentos)")
         
@@ -409,215 +406,3 @@ elif st.session_state[chave_store_banco] and ("Poupança" in conta_ativa or st.s
             st.markdown(f"### 🎛️ Painel - {conta_ativa.split('-')[0]}")
             st.caption("Navegação operacional")
             st.markdown("---")
-            data_selecionada = st.selectbox("📆 Selecione o Dia:", todas_datas, index=min(st.session_state.indice_data, len(todas_datas)-1))
-            st.session_state.indice_data = todas_datas.index(data_selecionada)
-            
-            col_b1, col_b2 = st.columns(2)
-            with col_b1:
-                if st.button("◀ Anterior", use_container_width=True) and st.session_state.indice_data > 0:
-                    st.session_state.indice_data -= 1
-                    st.rerun()
-            with col_b2:
-                if st.button("Próximo ▶", use_container_width=True) and st.session_state.indice_data < len(todas_datas) - 1:
-                    st.session_state.indice_data += 1
-                    st.rerun()
-            st.markdown("---")
-            if st.button("↩️ Desfazer Última Baixa", use_container_width=True) and st.session_state.historico_passos:
-                ultimo_passo = st.session_state.historico_passos.pop()
-                dt_passo = ultimo_passo['data']
-                for b_id in ultimo_passo['banco_ids']:
-                    st.session_state[chave_banco].remove(b_id)
-                    st.session_state[chave_hist_banco][dt_passo] = [x for x in st.session_state[chave_hist_banco][dt_passo] if x['id_banco'] != b_id]
-                for t_id in ultimo_passo['theos_ids']:
-                    st.session_state[chave_sistema].remove(t_id)
-                    st.session_state[chave_hist_sistema][dt_passo] = [x for x in st.session_state[chave_hist_sistema][dt_passo] if x['id_theos'] != t_id]
-                st.rerun()
-
-        info_saldo = mapa_saldos.get(data_selecionada, {'Anterior': 0.0, 'Final': 0.0})
-        df_banco_dia = df_banco_orig[df_banco_orig['Data'] == data_selecionada]
-        fluxo_dia = df_banco_dia['Valor'].sum()
-        
-        st.markdown("---")
-        col_s1, col_s2, col_s3 = st.columns(3)
-        with col_s1: st.metric(label="💰 Saldo Anterior Real", value=f"R$ {info_saldo['Anterior']:,.2f}")
-        with col_s2: st.metric(label="🔄 Movimentação Líquida", value=f"R$ {fluxo_dia:,.2f}", delta=f"{fluxo_dia:,.2f}")
-        with col_s3: st.metric(label="🏦 Saldo Final Sicoob", value=f"R$ {info_saldo['Final']:,.2f}")
-
-        aba_conciliacao, aba_historico = st.tabs(["🔄 Esteira de Conciliação Diária", "📋 Histórico de Fechamento"])
-
-        with aba_conciliacao:
-            st.markdown("#### ⚡ Ações Rápidas do Dia")
-            if st.button("🚀 Conciliar Dia Inteiro Automaticamente (Dar Baixa Geral Sem Seleção)", type="primary", use_container_width=True):
-                df_banco_dia_pendente = df_banco_dia[~df_banco_dia['id_banco'].isin(st.session_state[chave_banco])]
-                df_sistema_dia_pendente = df_sistema_pendente[df_sistema_pendente['Data'] == data_selecionada]
-                
-                if not df_banco_dia_pendente.empty or not df_sistema_dia_pendente.empty:
-                    passo_automatico = {'data': data_selecionada, 'banco_ids': [], 'theos_ids': []}
-                    if data_selecionada not in st.session_state[chave_hist_banco]: st.session_state[chave_hist_banco][data_selecionada] = []
-                    if data_selecionada not in st.session_state[chave_hist_sistema]: st.session_state[chave_hist_sistema][data_selecionada] = []
-                    
-                    chave_edicoes_banco = f"edicoes_banco_{conta_ativa}"
-                    chave_edicoes_sistema = f"edicoes_sistema_{conta_ativa}"
-                    
-                    for _, b in df_banco_dia_pendente.iterrows():
-                        b_id = b['id_banco']
-                        desc_banco = st.session_state.get(chave_edicoes_banco, {}).get(b_id, {}).get('Descrição', b.get('Detalhe_Limpo', b['Histórico']))
-                        val_banco = st.session_state.get(chave_edicoes_banco, {}).get(b_id, {}).get('Valor', b['Valor'])
-                        st.session_state[chave_banco].append(b_id)
-                        passo_automatico['banco_ids'].append(b_id)
-                        st.session_state[chave_hist_banco][data_selecionada].append({'id_banco': b_id, 'Descrição': desc_banco, 'Valor': val_banco})
-                        
-                    for _, t in df_sistema_dia_pendente.iterrows():
-                        t_id = t['id_theos']
-                        desc_sistema = st.session_state.get(chave_edicoes_sistema, {}).get(t_id, {}).get('Descrição', t['Descrição'])
-                        val_sistema = st.session_state.get(chave_edicoes_sistema, {}).get(t_id, {}).get('Valor', t['Valor'])
-                        st.session_state[chave_sistema].append(t_id)
-                        passo_automatico['theos_ids'].append(t_id)
-                        st.session_state[chave_hist_sistema][data_selecionada].append({'id_theos': t_id, 'Descrição': desc_sistema, 'Valor': val_sistema})
-                        
-                    st.session_state.historico_passos.append(passo_automatico)
-                    st.toast(f"Fechamento completo efetuado para o dia {data_selecionada}!", icon="⚡")
-                    st.rerun()
-
-            st.markdown("---")
-            st.markdown("#### 🔍 Filtro Tático Operacional")
-            tipos_disponiveis = sorted(list(set(df_banco_dia['Tipo'].unique()).union(set(df_sistema_pendente[df_sistema_pendente['Data'] == data_selecionada]['Tipo'].unique()))))
-            tipo_filtro = st.selectbox("🎯 Filtrar tela por Tipo de Transação:", ["Todos"] + tipos_disponiveis)
-
-            df_banco_tela = df_banco_dia[~df_banco_dia['id_banco'].isin(st.session_state[chave_banco])]
-            df_sistema_tela = df_sistema_pendente[df_sistema_pendente['Data'] == data_selecionada]
-
-            if tipo_filtro != "Todos":
-                df_banco_tela = df_banco_tela[df_banco_tela['Tipo'] == tipo_filtro]
-                df_sistema_tela = df_sistema_tela[df_sistema_tela['Tipo'] == tipo_filtro]
-
-            valores_banco_abs = df_banco_tela['Valor'].abs().tolist()
-            valores_sistema_abs = df_sistema_tela['Valor'].abs().tolist() if not df_sistema_tela.empty else []
-
-            if f"marcar_todos_b_{data_selecionada}_{tipo_filtro}" not in st.session_state: st.session_state[f"marcar_todos_b_{data_selecionada}_{tipo_filtro}"] = False
-            if f"marcar_todos_s_{data_selecionada}_{tipo_filtro}" not in st.session_state: st.session_state[f"marcar_todos_s_{data_selecionada}_{tipo_filtro}"] = False
-
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown('<div class="titulo-coluna"><span style="font-size:24px;">🏦</span><div class="texto-header-col">Extrato Sicoob</div></div>', unsafe_allow_html=True)
-                container_calculo_banco = st.empty()
-                if not df_banco_tela.empty and st.button("⭐ Selecionar Match Automático (Banco)", key=f"btn_b_{data_selecionada}_{tipo_filtro}"):
-                    st.session_state[f"marcar_todos_b_{data_selecionada}_{tipo_filtro}"] = True
-                    st.rerun()
-
-                selecionados_banco = []
-                soma_banco_atual = 0.0
-                chave_edicoes_banco = f"edicoes_banco_{conta_ativa}"
-                if chave_edicoes_banco not in st.session_state: st.session_state[chave_edicoes_banco] = {}
-
-                for _, row in df_banco_tela.iterrows():
-                    b_id = row['id_banco']
-                    desc_banco = st.session_state[chave_edicoes_banco].get(b_id, {}).get('Descrição', row.get('Detalhe_Limpo', row['Histórico']))
-                    val_banco = st.session_state[chave_edicoes_banco].get(b_id, {}).get('Valor', row['Valor'])
-                    v_abs = abs(val_banco)
-                    valor_padrao_chk = (v_abs in valores_sistema_abs) or st.session_state[f"marcar_todos_b_{data_selecionada}_{tipo_filtro}"]
-                    
-                    col_chk, col_edit = st.columns([0.88, 0.12])
-                    with col_chk:
-                        if st.checkbox(f"{row.get('Tipo', '🔹 OUTROS')} | R$ {v_abs:,.2f} | {desc_banco[:35]}", key=f"b_{b_id}", value=valor_padrao_chk):
-                            row_mod = row.copy()
-                            row_mod['Detalhe_Limpo'] = desc_banco
-                            row_mod['Valor'] = val_banco
-                            selecionados_banco.append(row_mod)
-                            soma_banco_atual += val_banco
-                    with col_edit:
-                        with st.popover("⚙️"):
-                            novo_desc = st.text_input("Descrição:", value=desc_banco, key=f"desc_inp_b_{b_id}")
-                            novo_val = st.number_input("Valor:", value=float(val_banco), key=f"val_inp_b_{b_id}")
-                            if st.button("Salvar", key=f"btn_salvar_b_{b_id}"):
-                                st.session_state[chave_edicoes_banco][b_id] = {'Descrição': novo_desc, 'Valor': novo_val}
-                                st.rerun()
-                container_calculo_banco.markdown(f'<div class="caixa-calculo">📊 Selecionados: {len(selecionados_banco)} itens | Soma: R$ {soma_banco_atual:,.2f}</div>', unsafe_allow_html=True)
-
-            with col2:
-                lbl_sist = "💻 Paróquia / Eclesial (Dízimos)" if "140" in conta_ativa else "💻 Paróquia / Boletim Theos"
-                st.markdown('<div class="titulo-coluna-igreja"><span style="font-size:24px;">⛪</span><div class="texto-header-col">' + lbl_sist + '</div></div>', unsafe_allow_html=True)
-                container_calculo_sistema = st.empty()
-                if not df_sistema_tela.empty and st.button("⭐ Selecionar Match Automático (Sistema)", key=f"btn_s_{data_selecionada}_{tipo_filtro}"):
-                    st.session_state[f"marcar_todos_s_{data_selecionada}_{tipo_filtro}"] = True
-                    st.rerun()
-
-                selecionados_sistema = []
-                soma_sistema_atual = 0.0
-                chave_edicoes_sistema = f"edicoes_sistema_{conta_ativa}"
-                if chave_edicoes_sistema not in st.session_state: st.session_state[chave_edicoes_sistema] = {}
-
-                for _, row in df_sistema_tela.iterrows():
-                    t_id = row['id_theos']
-                    desc_sistema = st.session_state[chave_edicoes_sistema].get(t_id, {}).get('Descrição', row['Descrição'])
-                    val_sistema = st.session_state[chave_edicoes_sistema].get(t_id, {}).get('Valor', row['Valor'])
-                    v_abs = abs(val_sistema)
-                    valor_padrao_chk = (v_abs in valores_banco_abs) or st.session_state[f"marcar_todos_s_{data_selecionada}_{tipo_filtro}"]
-                    
-                    col_chk, col_edit = st.columns([0.88, 0.12])
-                    with col_chk:
-                        if st.checkbox(f"{row.get('Tipo', '🔹 OUTROS')} | R$ {v_abs:,.2f} | {desc_sistema[:35]}", key=f"t_{t_id}", value=valor_padrao_chk):
-                            row_mod = row.copy()
-                            row_mod['Descrição'] = desc_sistema
-                            row_mod['Valor'] = val_sistema
-                            selecionados_sistema.append(row_mod)
-                            soma_sistema_atual += val_sistema
-                    with col_edit:
-                        with st.popover("⚙️"):
-                            novo_desc = st.text_input("Descrição:", value=desc_sistema, key=f"desc_inp_s_{t_id}")
-                            novo_val = st.number_input("Valor:", value=float(val_sistema), key=f"val_inp_s_{t_id}")
-                            if st.button("Salvar", key=f"btn_salvar_s_{t_id}"):
-                                st.session_state[chave_edicoes_sistema][t_id] = {'Descrição': novo_desc, 'Valor': novo_val}
-                                st.rerun()
-                container_calculo_sistema.markdown(f'<div class="caixa-calculo-igreja">📊 Selecionados: {len(selecionados_sistema)} itens | Soma: R$ {soma_sistema_atual:,.2f}</div>', unsafe_allow_html=True)
-
-            st.markdown("---")
-            if (selecionados_banco or selecionados_sistema) and st.button("✂️ Confirmar Baixa dos Itens Selecionados", type="primary", use_container_width=True):
-                passo_atual = {'data': data_selecionada, 'banco_ids': [], 'theos_ids': []}
-                if data_selecionada not in st.session_state[chave_hist_banco]: st.session_state[chave_hist_banco][data_selecionada] = []
-                if data_selecionada not in st.session_state[chave_hist_sistema]: st.session_state[chave_hist_sistema][data_selecionada] = []
-                
-                for b in selecionados_banco:
-                    st.session_state[chave_banco].append(b['id_banco'])
-                    passo_atual['banco_ids'].append(b['id_banco'])
-                    st.session_state[chave_hist_banco][data_selecionada].append({'id_banco': b['id_banco'], 'Descrição': b['Detalhe_Limpo'], 'Valor': b['Valor']})
-                for t in selecionados_sistema:
-                    st.session_state[chave_sistema].append(t['id_theos'])
-                    passo_atual['theos_ids'].append(t['id_theos'])
-                    st.session_state[chave_hist_sistema][data_selecionada].append({'id_theos': t['id_theos'], 'Descrição': t['Descrição'], 'Valor': t['Valor']})
-                
-                st.session_state[f"marcar_todos_b_{data_selecionada}_{tipo_filtro}"] = False
-                st.session_state[f"marcar_todos_s_{data_selecionada}_{tipo_filtro}"] = False
-                st.session_state.historico_passos.append(passo_atual)
-                st.toast("Baixa efetuada com sucesso!", icon="✅")
-                st.rerun()
-
-        with aba_historico:
-            datas_com_baixas = sorted(list(set(st.session_state[chave_hist_banco].keys()).union(set(st.session_state[chave_hist_sistema].keys()))), key=lambda x: pd.to_datetime(x, dayfirst=True))
-            if datas_com_baixas:
-                dados_tabela_lado_a_lado = []
-                for dia in datas_com_baixas:
-                    itens_banco = st.session_state[chave_hist_banco].get(dia, [])
-                    itens_sistema = st.session_state[chave_hist_sistema].get(dia, [])
-                    for i in range(max(len(itens_banco), len(itens_sistema))):
-                        b_item = itens_banco[i] if i < len(itens_banco) else {'Descrição': '', 'Valor': None}
-                        s_item = itens_sistema[i] if i < len(itens_sistema) else {'Descrição': '', 'Valor': None}
-                        dados_tabela_lado_a_lado.append({
-                            'Data Movimento': dia, 'Extrato Sicoob (Histórico)': b_item['Descrição'], 'Extrato Sicoob (Valor)': b_item['Valor'],
-                            'Boletim/Sistema (Descrição)': s_item['Descrição'], 'Boletim/Sistema (Valor)': s_item['Valor']
-                        })
-                    saldo_do_dia_atual = mapa_saldos.get(dia, {'Final': 0.0})['Final']
-                    dados_tabela_lado_a_lado.append({
-                        'Data Movimento': dia, 'Extrato Sicoob (Histórico)': '🏁 --- SALDO FINAL DO DIA ---', 'Extrato Sicoob (Valor)': saldo_do_dia_atual,
-                        'Boletim/Sistema (Descrição)': '🏁 --- FECHAMENTO CONCILIADO ---', 'Boletim/Sistema (Valor)': saldo_do_dia_atual
-                    })
-                df_exportar = pd.DataFrame(dados_tabela_lado_a_lado)
-                st.dataframe(df_exportar, use_container_width=True, hide_index=True)
-                
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    df_exportar.to_excel(writer, sheet_name='Conciliação Diária', index=False)
-                st.download_button(label="📥 Baixar Planilha de Fechamento (.xlsx)", data=output.getvalue(), file_name=f"Fechamento_Diario_{conta_ativa.split('-')[0].strip()}.xlsx", use_container_width=True)
-else:
-    st.info("💡 Escolha a conta bancária no topo e insira os arquivos para iniciar os trabalhos.")
