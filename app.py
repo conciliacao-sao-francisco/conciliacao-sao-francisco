@@ -367,31 +367,33 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
     todas_datas_totais = sorted(list(set(df_b_orig['Data'].unique()).union(set(df_s_orig['Data'].unique()))), key=lambda x: pd.to_datetime(x, dayfirst=True))
     datas_pendentes = [d for d in todas_datas_totais if d not in st.session_state[chave_dias_conciliados]]
 
+    # MODIFICAÇÃO REGRA DE PARADA: Se não houver pendentes, renderiza a tela mesmo assim para permitir navegação no Histórico
     if not datas_pendentes:
-        st.balloons()
-        st.success("🎉 Todos os dias desse período foram totalmente conciliados!")
-        st.stop()
-
-    # TENTATIVA DE RECUPERAR A ÚLTIMA DATA ATIVA SALVA ANTES DO F5
-    if 'indice_data' not in st.session_state:
-        data_inicial_recuperada = datas_pendentes[0]
-        if os.path.exists(arq_cache_data_ativa):
-            with open(arq_cache_data_ativa, "r", encoding="utf-8") as f:
-                saved_dt = f.read().strip()
-                if saved_dt in datas_pendentes:
-                    data_inicial_recuperada = saved_dt
-        st.session_state.indice_data = datas_pendentes.index(data_inicial_recuperada)
-        
-    if st.session_state.indice_data >= len(datas_pendentes):
-        st.session_state.indice_data = 0
+        data_selecionada = todas_datas_totais[0] if todas_datas_totais else None
+    else:
+        # TENTATIVA DE RECUPERAR A ÚLTIMA DATA ATIVA SALVA ANTES DO F5
+        if 'indice_data' not in st.session_state:
+            data_inicial_recuperada = datas_pendentes[0]
+            if os.path.exists(arq_cache_data_ativa):
+                with open(arq_cache_data_ativa, "r", encoding="utf-8") as f:
+                    saved_dt = f.read().strip()
+                    if saved_dt in datas_pendentes:
+                        data_inicial_recuperada = saved_dt
+            st.session_state.indice_data = datas_pendentes.index(data_inicial_recuperada)
+            
+        if st.session_state.indice_data >= len(datas_pendentes):
+            st.session_state.indice_data = 0
+            
+        data_selecionada = datas_pendentes[st.session_state.indice_data]
 
     with st.sidebar:
         st.markdown("### 🎛️ Controle de Datas")
-        data_selecionada = st.selectbox("📆 Dias Pendentes de Baixa:", datas_pendentes, index=st.session_state.indice_data)
-        
-        # Salvando imediatamente a nova data escolhida no HD
-        st.session_state.indice_data = datas_pendentes.index(data_selecionada)
-        with open(arq_cache_data_ativa, "w", encoding="utf-8") as f: f.write(data_selecionada)
+        if datas_pendentes:
+            data_selecionada = st.selectbox("📆 Dias Pendentes de Baixa:", datas_pendentes, index=st.session_state.indice_data)
+            st.session_state.indice_data = datas_pendentes.index(data_selecionada)
+            with open(arq_cache_data_ativa, "w", encoding="utf-8") as f: f.write(data_selecionada)
+        else:
+            st.success("🎉 Nenhum dia pendente!")
         
         st.markdown("---")
         st.markdown("### 🔄 Limpeza de Filtros")
@@ -402,9 +404,9 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
                 st.toast("Todos os itens ocultados voltaram para a tela!", icon="🔄")
                 st.rerun()
 
-    df_banco_dia = df_b_orig[df_b_orig['Data'] == data_selecionada].copy()
-    df_sistema_dia = df_s_orig[df_s_orig['Data'] == data_selecionada].copy() if not df_s_orig.empty else pd.DataFrame()
-    df_sipag_dia = df_sipag_orig[df_sipag_orig['Data'] == data_selecionada].copy() if not df_sipag_orig.empty else pd.DataFrame()
+    df_banco_dia = df_b_orig[df_b_orig['Data'] == data_selecionada].copy() if data_selecionada else pd.DataFrame()
+    df_sistema_dia = df_s_orig[df_s_orig['Data'] == data_selecionada].copy() if (not df_s_orig.empty and data_selecionada) else pd.DataFrame()
+    df_sipag_dia = df_sipag_orig[df_sipag_orig['Data'] == data_selecionada].copy() if (not df_sipag_orig.empty and data_selecionada) else pd.DataFrame()
 
     # Consolidando todos os IDs ocultados do histórico para filtragem na tela
     todos_ocultados = set()
@@ -412,12 +414,11 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         todos_ocultados.update(lista_ids)
 
     # FILTRAGEM: Remove os itens ocultados da visualização
-    df_banco_dia = df_banco_dia[~df_banco_dia['id'].isin(todos_ocultados)]
-    if not df_sistema_dia.empty:
-        df_sistema_dia = df_sistema_dia[~df_sistema_dia['id'].isin(todos_ocultados)]
+    if not df_banco_dia.empty: df_banco_dia = df_banco_dia[~df_banco_dia['id'].isin(todos_ocultados)]
+    if not df_sistema_dia.empty: df_sistema_dia = df_sistema_dia[~df_sistema_dia['id'].isin(todos_ocultados)]
 
-    saldo_banco_declarado = round(mapa_saldos_banco.get(data_selecionada, 0.0), 2)
-    saldo_oficial_boletim = round(mapa_saldos_theos.get(data_selecionada, 0.0), 2)
+    saldo_banco_declarado = round(mapa_saldos_banco.get(data_selecionada, 0.0), 2) if data_selecionada else 0.0
+    saldo_oficial_boletim = round(mapa_saldos_theos.get(data_selecionada, 0.0), 2) if data_selecionada else 0.0
     
     if data_selecionada == "08/04/2026":
         saldo_banco_declarado = 139305.81
@@ -428,11 +429,13 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
     st.markdown("---")
     
     col_s1, col_s2, col_s3, col_s4 = st.columns(4)
-    col_s1.metric("📅 Dia em Execução", data_selecionada)
+    col_s1.metric("📅 Dia em Execução", data_selecionada if data_selecionada else "--/--/----")
     col_s2.metric("🏦 Saldo do Dia (Sicoob Extrato)", f"R$ {saldo_banco_declarado:,.2f}")
     col_s3.metric("⛪ Saldo do Dia (Boletim Theos)", f"R$ {saldo_oficial_boletim:,.2f}")
     
-    if abs(diferenca_visual) < 0.05:
+    if data_selecionada in st.session_state[chave_dias_conciliados]:
+        col_s4.metric("🎯 Alinhamento de Saldos", "🔒 DIA CONCILIADO", delta="Modo Leitura")
+    elif abs(diferenca_visual) < 0.05:
         col_s4.metric("🎯 Alinhamento de Saldos", "✅ 100% FECHADO", delta="Pronto para Baixar")
     else:
         col_s4.metric("🎯 Alinhamento de Saldos", "⚠️ CONFERIR AJUSTES", delta=f"Dif. Total: R$ {diferenca_visual:,.2f}", delta_color="inverse")
@@ -440,18 +443,23 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
     aba_conciliacao, aba_historico = st.tabs(["🔄 Esteira de Conciliação Diária", "📋 Histórico de Fechamento"])
 
     with aba_conciliacao:
+        if not datas_pendentes and data_selecionada not in st.session_state[chave_dias_conciliados]:
+            st.balloons()
+            st.success("🎉 Todos os dias desse período foram totalmente conciliados! Use a aba Histórico abaixo se precisar reabrir algum dia.")
+        
         st.markdown(f"### Lançamentos Ativos do Dia: <span style='color:#004B87;'>{data_selecionada}</span>", unsafe_allow_html=True)
         
         c_flt1, c_flt2 = st.columns(2)
         filtro_banco = c_flt1.selectbox("🎯 Filtrar Extrato Sicoob:", ["Todos", "🟢 PIX RECEBIDO", "🔴 PIX ENVIADO", "🔴 PAGTO TITULO", "💳 SIPAG LOTE"])
         filtro_sist = c_flt2.selectbox("🎯 Filtrar Sistema:", ["Todos", "ENTRADA", "SAÍDA"])
         
-        df_banco_tela = df_banco_dia if filtro_banco == "Todos" else df_banco_dia[df_banco_dia['Tipo'] == filtro_banco]
+        df_banco_tela = df_banco_dia if filtro_banco == "Todos" else (df_banco_dia[df_banco_dia['Tipo'] == filtro_banco] if not df_banco_dia.empty else pd.DataFrame())
         df_sistema_tela = df_sistema_dia if filtro_sist == "Todos" else (df_sistema_dia[df_sistema_dia['Tipo'] == filtro_sist] if not df_sistema_dia.empty else pd.DataFrame())
         df_sipag_tela = df_sipag_dia
         
-        for _, row in df_banco_tela.iterrows():
-            if f"chk_{row['id']}" not in st.session_state: st.session_state[f"chk_{row['id']}"] = False
+        if not df_banco_tela.empty:
+            for _, row in df_banco_tela.iterrows():
+                if f"chk_{row['id']}" not in st.session_state: st.session_state[f"chk_{row['id']}"] = False
         if not df_sistema_tela.empty:
             for _, row in df_sistema_tela.iterrows():
                 if f"chk_{row['id']}" not in st.session_state: st.session_state[f"chk_{row['id']}"] = False
@@ -464,8 +472,9 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         with col_btn1:
             if st.button("💥 Colocar como OK e Ocultar Itens Selecionados", type="primary", use_container_width=True):
                 ids_para_ocultar_agora = []
-                for _, row in df_banco_tela.iterrows():
-                    if st.session_state.get(f"chk_{row['id']}", False): ids_para_ocultar_agora.append(row['id'])
+                if not df_banco_tela.empty:
+                    for _, row in df_banco_tela.iterrows():
+                        if st.session_state.get(f"chk_{row['id']}", False): ids_para_ocultar_agora.append(row['id'])
                 if not df_sistema_tela.empty:
                     for _, row in df_sistema_tela.iterrows():
                         if st.session_state.get(f"chk_{row['id']}", False): ids_para_ocultar_agora.append(row['id'])
@@ -499,15 +508,16 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         with col1:
             st.markdown('<div class="titulo-coluna">🏦 Extrato Sicoob</div>', unsafe_allow_html=True)
             
-            c_sel1, c_sel2 = st.columns(2)
-            if c_sel1.button("✅ Marcar Todos (Sicoob)", key="btn_sel_all_banco", use_container_width=True):
-                for _, row in df_banco_tela.iterrows(): st.session_state[f"chk_{row['id']}"] = True
-                st.rerun()
-            if c_sel2.button("⬜ Desmarcar Todos (Sicoob)", key="btn_desel_all_banco", use_container_width=True):
-                for _, row in df_banco_tela.iterrows(): st.session_state[f"chk_{row['id']}"] = False
-                st.rerun()
+            if not df_banco_tela.empty:
+                c_sel1, c_sel2 = st.columns(2)
+                if c_sel1.button("✅ Marcar Todos (Sicoob)", key="btn_sel_all_banco", use_container_width=True):
+                    for _, row in df_banco_tela.iterrows(): st.session_state[f"chk_{row['id']}"] = True
+                    st.rerun()
+                if c_sel2.button("⬜ Desmarcar Todos (Sicoob)", key="btn_desel_all_banco", use_container_width=True):
+                    for _, row in df_banco_tela.iterrows(): st.session_state[f"chk_{row['id']}"] = False
+                    st.rerun()
                 
-            soma_banco_marcado = sum(row['Valor'] for _, row in df_banco_tela.iterrows() if st.session_state.get(f"chk_{row['id']}", False))
+            soma_banco_marcado = sum(row['Valor'] for _, row in df_banco_tela.iterrows() if st.session_state.get(f"chk_{row['id']}", False)) if not df_banco_tela.empty else 0.0
             st.markdown(f'<div class="caixa-soma">💰 Selecionado: R$ {soma_banco_marcado:,.2f}</div>', unsafe_allow_html=True)
             
             if df_banco_tela.empty:
@@ -548,15 +558,16 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
                 st.warning("Sem registros SIPAG para este dia.")
 
         st.markdown("---")
-        if st.button("⚡ Confirmar Finalização Completa do Dia", type="secondary", use_container_width=True):
-            st.session_state[chave_dias_conciliados].append(data_selecionada)
-            
-            # SALVAMENTO AUTOMÁTICO DOS DIAS CONCILIADOS NO HD
-            with open(arq_cache_dias_conciliados, "w", encoding="utf-8") as f:
-                json.dump(st.session_state[chave_dias_conciliados], f, ensure_ascii=False)
+        if data_selecionada and data_selecionada not in st.session_state[chave_dias_conciliados]:
+            if st.button("⚡ Confirmar Finalização Completa do Dia", type="secondary", use_container_width=True):
+                st.session_state[chave_dias_conciliados].append(data_selecionada)
                 
-            st.toast(f"✅ Dia {data_selecionada} arquivado com sucesso!")
-            st.rerun()
+                # SALVAMENTO AUTOMÁTICO DOS DIAS CONCILIADOS NO HD
+                with open(arq_cache_dias_conciliados, "w", encoding="utf-8") as f:
+                    json.dump(st.session_state[chave_dias_conciliados], f, ensure_ascii=False)
+                    
+                st.toast(f"✅ Dia {data_selecionada} arquivado com sucesso!")
+                st.rerun()
 
         # Central de Ajustes Manuais
         st.markdown("---")
@@ -638,5 +649,27 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
     with aba_historico:
         st.markdown("### 📋 Histórico de Fechamento do Período")
         if st.session_state[chave_dias_conciliados]:
-            for d in st.session_state[chave_dias_conciliados]:
-                st.success(f"📆 Dia {d} -> **CONCILIADO E PRONTO**")
+            # Criando uma lista para podermos iterar e modificar sem dar erro de concorrência
+            lista_dias = list(st.session_state[chave_dias_conciliados])
+            for d in lista_dias:
+                col_txt, col_act = st.columns([4, 1])
+                with col_txt:
+                    st.success(f"📆 Dia {d} -> **CONCILIADO E PRONTO**")
+                with col_act:
+                    # 🔓 BOTÃO DE REABERTURA INJETADO
+                    if st.button("🔓 Reabrir este Dia", key=f"btn_reabrir_{d}_{conta_ativa}", use_container_width=True):
+                        st.session_state[chave_dias_conciliados].remove(d)
+                        # Atualiza imediatamente o arquivo físico no disco removendo o dia
+                        with open(arq_cache_dias_conciliados, "w", encoding="utf-8") as f:
+                            json.dump(st.session_state[chave_dias_conciliados], f, ensure_ascii=False)
+                        
+                        # Reseta o ponteiro de seleção de datas para o dia reaberto
+                        if 'indice_data' in st.session_state:
+                            del st.session_state.indice_data
+                        with open(arq_cache_data_ativa, "w", encoding="utf-8") as f:
+                            f.write(d)
+                            
+                        st.toast(f"Dia {d} foi retirado do histórico e reaberto!", icon="🔓")
+                        st.rerun()
+        else:
+            st.info("Nenhum dia foi finalizado neste lote ainda.")
