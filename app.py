@@ -6,7 +6,7 @@ import pandas as pd
 import re
 import io
 import datetime
-import os  # BIBLIOTECA ADICIONADA PARA GERENCIAR ARQUIVOS NO DISCO
+import os
 
 # =========================================================================
 # ⚙️ CONFIGURAÇÃO DA PÁGINA (DEVE SER O PRIMEIRO COMANDO STREAMLIT)
@@ -84,6 +84,14 @@ chave_nome_sistema = f"nome_sistema_{conta_ativa}"
 chave_nome_sipag = f"nome_sipag_{conta_ativa}"
 chave_modificacoes = f"modificacoes_ajustes_{conta_ativa}"
 chave_dias_conciliados = f"dias_conciliados_{conta_ativa}"
+chave_baixados_manualmente = f"baixados_manualmente_{conta_ativa}" # NOVA CHAVE ADICIONADA
+
+if chave_store_banco not in st.session_state: st.session_state[chave_store_banco] = None
+if chave_store_sistema not in st.session_state: st.session_state[chave_store_sistema] = None
+if chave_store_sipag not in st.session_state: st.session_state[chave_store_sipag] = None
+if chave_modificacoes not in st.session_state: st.session_state[chave_modificacoes] = []
+if chave_dias_conciliados not in st.session_state: st.session_state[chave_dias_conciliados] = []
+if chave_baixados_manualmente not in st.session_state: st.session_state[chave_baixados_manualmente] = set()
 
 # Nomes de arquivos físicos no HD para persistência após F5
 arq_cache_banco = os.path.join(CACHE_DIR, f"banco_{conta_ativa}.cache")
@@ -93,13 +101,7 @@ arq_cache_nome_banco = os.path.join(CACHE_DIR, f"nome_banco_{conta_ativa}.txt")
 arq_cache_nome_sistema = os.path.join(CACHE_DIR, f"nome_sistema_{conta_ativa}.txt")
 arq_cache_nome_sipag = os.path.join(CACHE_DIR, f"nome_sipag_{conta_ativa}.txt")
 
-if chave_store_banco not in st.session_state: st.session_state[chave_store_banco] = None
-if chave_store_sistema not in st.session_state: st.session_state[chave_store_sistema] = None
-if chave_store_sipag not in st.session_state: st.session_state[chave_store_sipag] = None
-if chave_modificacoes not in st.session_state: st.session_state[chave_modificacoes] = []
-if chave_dias_conciliados not in st.session_state: st.session_state[chave_dias_conciliados] = []
-
-# TENTATIVA DE RECUPERAÇÃO APÓS F5: Se a sessão sumiu, mas o arquivo físico existe no computador, lê de volta.
+# TENTATIVA DE RECUPERAÇÃO APÓS F5
 if st.session_state[chave_store_banco] is None and os.path.exists(arq_cache_banco):
     with open(arq_cache_banco, "rb") as f: st.session_state[chave_store_banco] = f.read()
     if os.path.exists(arq_cache_nome_banco):
@@ -128,7 +130,6 @@ with col_up1:
         conteudo = u_extrato.getvalue()
         st.session_state[chave_store_banco] = conteudo
         st.session_state[chave_nome_banco] = u_extrato.name
-        # Salva fisicamente no HD para resistir ao F5
         with open(arq_cache_banco, "wb") as f: f.write(conteudo)
         with open(arq_cache_nome_banco, "w", encoding="utf-8") as f: f.write(u_extrato.name)
     elif st.session_state[chave_store_banco] is not None:
@@ -140,7 +141,6 @@ with col_up2:
         conteudo = u_sistema.getvalue()
         st.session_state[chave_store_sistema] = conteudo
         st.session_state[chave_nome_sistema] = u_sistema.name
-        # Salva fisicamente no HD para resistir ao F5
         with open(arq_cache_sistema, "wb") as f: f.write(conteudo)
         with open(arq_cache_nome_sistema, "w", encoding="utf-8") as f: f.write(u_sistema.name)
     elif st.session_state[chave_store_sistema] is not None:
@@ -152,7 +152,6 @@ with col_up3:
         conteudo = u_sipag.getvalue()
         st.session_state[chave_store_sipag] = conteudo
         st.session_state[chave_nome_sipag] = u_sipag.name
-        # Salva fisicamente no HD para resistir ao F5
         with open(arq_cache_sipag, "wb") as f: f.write(conteudo)
         with open(arq_cache_nome_sipag, "w", encoding="utf-8") as f: f.write(u_sipag.name)
     elif st.session_state[chave_store_sipag] is not None:
@@ -168,9 +167,9 @@ if st.session_state[chave_store_banco] or st.session_state[chave_store_sistema] 
         st.session_state[chave_nome_sipag] = None
         st.session_state[chave_modificacoes] = []
         st.session_state[chave_dias_conciliados] = []
+        st.session_state[chave_baixados_manualmente] = set()
         if 'indice_data' in st.session_state: del st.session_state.indice_data
         
-        # Remove fisicamente do HD para limpar de vez
         for path in [arq_cache_banco, arq_cache_sistema, arq_cache_sipag, arq_cache_nome_banco, arq_cache_nome_sistema, arq_cache_nome_sipag]:
             if os.path.exists(path): os.remove(path)
             
@@ -353,27 +352,21 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         st.session_state.indice_data = datas_pendentes.index(data_selecionada)
         
         st.markdown("---")
-        st.markdown("### 👁️ Filtros de Visibilidade")
-        ocultar_iguais = st.toggle("Ocultar correspondências perfeitas", value=False, help="Esconde automaticamente linhas do Sicoob e do Theos que possuem valores idênticos correspondentes no dia.")
+        st.markdown("### 🔄 Histórico de Ocultação")
+        if st.session_state[chave_baixados_manualmente]:
+            if st.button("🔄 Trazer Itens Ocultados de Volta", use_container_width=True, type="secondary"):
+                st.session_state[chave_baixados_manualmente] = set()
+                st.toast("Todos os itens marcados foram devolvidos à tela!", icon="🔄")
+                st.rerun()
 
     df_banco_dia = df_b_orig[df_b_orig['Data'] == data_selecionada].copy()
     df_sistema_dia = df_s_orig[df_s_orig['Data'] == data_selecionada].copy() if not df_s_orig.empty else pd.DataFrame()
     df_sipag_dia = df_sipag_orig[df_sipag_orig['Data'] == data_selecionada].copy() if not df_sipag_orig.empty else pd.DataFrame()
-    
-    ids_banco_ocultar = set()
-    ids_sistema_ocultar = set()
-    
-    if ocultar_iguais and not df_banco_dia.empty and not df_sistema_dia.empty:
-        valores_banco = df_banco_dia[['id', 'Valor']].to_dict('records')
-        valores_sistema = df_sistema_dia[['id', 'Valor']].to_dict('records')
-        
-        for item_b in valores_banco:
-            for item_s in valores_sistema:
-                if item_s['id'] not in ids_sistema_ocultar:
-                    if abs(item_b['Valor']) == abs(item_s['Valor']):
-                        ids_banco_ocultar.add(item_b['id'])
-                        ids_sistema_ocultar.add(item_s['id'])
-                        break
+
+    # FILTRAGEM RIGOROSA DA TELA: Remove os itens que foram marcados para ocultação manual
+    df_banco_dia = df_banco_dia[~df_banco_dia['id'].isin(st.session_state[chave_baixados_manualmente])]
+    if not df_sistema_dia.empty:
+        df_sistema_dia = df_sistema_dia[~df_sistema_dia['id'].isin(st.session_state[chave_baixados_manualmente])]
 
     saldo_banco_declarado = round(mapa_saldos_banco.get(data_selecionada, 0.0), 2)
     saldo_oficial_boletim = round(mapa_saldos_theos.get(data_selecionada, 0.0), 2)
@@ -409,26 +402,34 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         df_sistema_tela = df_sistema_dia if filtro_sist == "Todos" else (df_sistema_dia[df_sistema_dia['Tipo'] == filtro_sist] if not df_sistema_dia.empty else pd.DataFrame())
         df_sipag_tela = df_sipag_dia
         
-        df_banco_exibicao = df_banco_tela[~df_banco_tela['id'].isin(ids_banco_ocultar)]
-        df_sistema_exibicao = df_sistema_tela[~df_sistema_tela['id'].isin(ids_sistema_ocultar)] if not df_sistema_tela.empty else pd.DataFrame()
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        col_auto1, col_auto2 = st.columns([2, 1])
-        with col_auto1:
-            st.info(f"Use os blocos abaixo para marcar os itens conferidos. Clicando ao lado, o dia **{data_selecionada}** será arquivado.")
-        with col_auto2:
-            if st.button("⚡ Confirmar Baixa Direta e Ir p/ Próximo Dia", type="primary", use_container_width=True):
-                st.session_state[chave_dias_conciliados].append(data_selecionada)
-                st.toast(f"✅ Dia {data_selecionada} baixado!")
-                st.rerun()
-
-        st.markdown("---")
-        
+        # Inicializa chaves de checkbox pendentes
         for _, row in df_banco_tela.iterrows():
             if f"chk_{row['id']}" not in st.session_state: st.session_state[f"chk_{row['id']}"] = False
         if not df_sistema_tela.empty:
             for _, row in df_sistema_tela.iterrows():
                 if f"chk_{row['id']}" not in st.session_state: st.session_state[f"chk_{row['id']}"] = False
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # BOTÃO SOLICITADO: ACESSA AS SELEÇÕES ATUAIS DAS DUAS COLUNAS E REALIZA A OCULTAÇÃO CONJUNTA
+        if st.button("💥 Colocar como OK e Ocultar Itens Selecionados", type="primary", use_container_width=True, help="Oculta definitivamente da tela os registros marcados manualmente nas caixinhas."):
+            ids_para_ocultar_agora = set()
+            for _, row in df_banco_tela.iterrows():
+                if st.session_state.get(f"chk_{row['id']}", False): ids_para_ocultar_agora.add(row['id'])
+            if not df_sistema_tela.empty:
+                for _, row in df_sistema_tela.iterrows():
+                    if st.session_state.get(f"chk_{row['id']}", False): ids_para_ocultar_agora.add(row['id'])
+                    
+            if ids_para_ocultar_agora:
+                st.session_state[chave_baixados_manualmente].update(ids_para_ocultar_agora)
+                # Limpa o estado visual dos checks para evitar reuso acidental
+                for idx_id in ids_para_ocultar_agora: st.session_state[f"chk_{idx_id}"] = False
+                st.toast("Itens enviados para baixa e ocultados com sucesso!", icon="✅")
+                st.rerun()
+            else:
+                st.warning("Marque ao menos uma caixinha antes de acionar este comando!")
+
+        st.markdown("---")
 
         col1, col2, col3 = st.columns(3)
         
@@ -437,44 +438,41 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
             
             c_sel1, c_sel2 = st.columns(2)
             if c_sel1.button("✅ Marcar Todos (Sicoob)", key="btn_sel_all_banco", use_container_width=True):
-                for _, row in df_banco_exibicao.iterrows(): st.session_state[f"chk_{row['id']}"] = True
+                for _, row in df_banco_tela.iterrows(): st.session_state[f"chk_{row['id']}"] = True
                 st.rerun()
             if c_sel2.button("⬜ Desmarcar Todos (Sicoob)", key="btn_desel_all_banco", use_container_width=True):
-                for _, row in df_banco_exibicao.iterrows(): st.session_state[f"chk_{row['id']}"] = False
+                for _, row in df_banco_tela.iterrows(): st.session_state[f"chk_{row['id']}"] = False
                 st.rerun()
                 
             soma_banco_marcado = sum(row['Valor'] for _, row in df_banco_tela.iterrows() if st.session_state.get(f"chk_{row['id']}", False))
             st.markdown(f'<div class="caixa-soma">💰 Selecionado: R$ {soma_banco_marcado:,.2f}</div>', unsafe_allow_html=True)
             
-            if df_banco_exibicao.empty:
-                st.write("✨ Nenhuma divergência pendente nesta lista.")
+            if df_banco_tela.empty:
+                st.write("✨ Tudo certo aqui!")
             else:
-                for _, row in df_banco_exibicao.iterrows():
+                for _, row in df_banco_tela.iterrows():
                     st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Descrição'][:25]}", key=f"chk_{row['id']}")
                 
         with col2:
             st.markdown('<div class="titulo-coluna-igreja">⛪ Paróquia / Boletim Theos</div>', unsafe_allow_html=True)
             
-            if not df_sistema_exibicao.empty:
+            if not df_sistema_tela.empty:
                 c_sel3, c_sel4 = st.columns(2)
                 if c_sel3.button("✅ Marcar Todos (Theos)", key="btn_sel_all_sist", use_container_width=True):
-                    for _, row in df_sistema_exibicao.iterrows(): st.session_state[f"chk_{row['id']}"] = True
+                    for _, row in df_sistema_tela.iterrows(): st.session_state[f"chk_{row['id']}"] = True
                     st.rerun()
                 if c_sel4.button("⬜ Desmarcar Todos (Theos)", key="btn_desel_all_sist", use_container_width=True):
-                    for _, row in df_sistema_exibicao.iterrows(): st.session_state[f"chk_{row['id']}"] = False
+                    for _, row in df_sistema_tela.iterrows(): st.session_state[f"chk_{row['id']}"] = False
                     st.rerun()
             
             soma_sistema_marcado = sum(row['Valor'] for _, row in df_sistema_tela.iterrows() if st.session_state.get(f"chk_{row['id']}", False)) if not df_sistema_tela.empty else 0.0
             st.markdown(f'<div class="caixa-soma">💰 Selecionado: R$ {soma_sistema_marcado:,.2f}</div>', unsafe_allow_html=True)
             
-            if not df_sistema_exibicao.empty:
-                for _, row in df_sistema_exibicao.iterrows():
+            if not df_sistema_tela.empty:
+                for _, row in df_sistema_tela.iterrows():
                     st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Descrição'][:25]}", key=f"chk_{row['id']}")
             else:
-                if ocultar_iguais and not df_sistema_tela.empty:
-                    st.write("✨ Nenhuma divergência pendente nesta lista.")
-                else:
-                    st.warning("Sem lançamentos individuais importados.")
+                st.write("✨ Tudo certo aqui!")
 
         with col3:
             st.markdown('<div class="titulo-coluna-sipag">💳 Conferência Cartão SIPAG</div>', unsafe_allow_html=True)
@@ -485,6 +483,12 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
                     st.write(f"• R$ {row['Valor']:,.2f} | {row['CentroCusto']}")
             else:
                 st.warning("Sem registros SIPAG para este dia.")
+
+        st.markdown("---")
+        if st.button("⚡ Confirmar Finalização Completa do Dia", type="secondary", use_container_width=True):
+            st.session_state[chave_dias_conciliados].append(data_selecionada)
+            st.toast(f"✅ Dia {data_selecionada} arquivado com sucesso!")
+            st.rerun()
 
         # Central de Ajustes Manuais
         st.markdown("---")
