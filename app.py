@@ -131,6 +131,23 @@ def converter_valor_extrato(val_str):
 
 def processar_extrato_sicoob(arquivo_bytes):
     df_s_bruto = pd.read_excel(io.BytesIO(arquivo_bytes), skiprows=1)
+    
+    saldo_anterior_inicial = 0.0
+    saldos_finais_por_dia = {}
+    
+    # Mapeia saldos reais descritos nas linhas do arquivo do Sicoob
+    for _, row in df_s_bruto.iterrows():
+        if len(row) < 4: continue
+        historico = str(row.iloc[2]).strip().upper()
+        data_linha = row.iloc[0]
+        if "SALDO ANTERIOR" in historico: 
+            saldo_anterior_inicial = abs(converter_valor_extrato(row.iloc[3]))
+        if "SALDO DO DIA" in historico and pd.notna(data_linha):
+            try:
+                dt_formatada = pd.to_datetime(str(data_linha).strip(), dayfirst=True).strftime('%d/%m/%Y')
+                saldos_finais_por_dia[dt_formatada] = converter_valor_extrato(row.iloc[3])
+            except: pass
+
     dados_banco_brutos = []
     linha_mestre = None
     for _, row in df_s_bruto.iterrows():
@@ -150,7 +167,7 @@ def processar_extrato_sicoob(arquivo_bytes):
                 linha_mestre['Detalhes'] += " " + " ".join([str(v).strip() for v in row.values if pd.notna(v)])
                 
     if linha_mestre: dados_banco_brutos.append(linha_mestre)
-    return dados_banco_brutos
+    return dados_banco_brutos, saldo_anterior_inicial, saldos_finais_por_dia
 
 def processar_sipag_csv(arquivo_bytes):
     try:
@@ -178,7 +195,7 @@ def processar_sipag_csv(arquivo_bytes):
 
 # Processamento Principal usando a memória segura
 if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]:
-    dados_b = processar_extrato_sicoob(st.session_state[chave_store_banco])
+    dados_b, s_inicial, mapa_saldos_reais = processar_extrato_sicoob(st.session_state[chave_store_banco])
     
     dados_banco_finais = []
     for idx, item in enumerate(dados_b):
@@ -218,9 +235,7 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
     if st.session_state[chave_store_sipag]:
         df_sipag_orig = processar_sipag_csv(st.session_state[chave_store_sipag])
 
-    # =========================================================================
-    # ⚙️ CENTRAL DE APLICAÇÃO DAS MODIFICAÇÕES SALVAS (INSERIR/EDITAR/EXCLUIR)
-    # =========================================================================
+    # Central de modificações
     for mod in st.session_state[chave_modificacoes]:
         if mod['acao'] == 'excluir':
             df_b_orig = df_b_orig[df_b_orig['id'] != mod['id']]
@@ -258,10 +273,16 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
 
     df_banco_dia = df_b_orig[df_b_orig['Data'] == data_selecionada]
     
+    # Busca o Saldo Final Real do dia capturado na planilha do banco
+    saldo_final_extrato_dia = mapa_saldos_reais.get(data_selecionada, 0.0)
+    
     st.markdown("---")
+    # =========================================================================
+    # 💰 NOVAS MÉTRICAS COM SALDO CONFORME O EXTRATO BANCÁRIO REAL DO SICOOB
+    # =========================================================================
     col_s1, col_s2, col_s3 = st.columns(3)
-    col_s1.metric("💰 Saldo Movimentado (Extrato)", f"R$ {df_banco_dia['Valor'].sum():,.2f}")
-    col_s2.metric("⛪ Lançamentos Sistema", f"R$ {df_s_orig[df_s_orig['Data'] == data_selecionada]['Valor'].sum():,.2f}")
+    col_s1.metric("🔄 Movimentação do Dia (Líquida)", f"R$ {df_banco_dia['Valor'].sum():,.2f}")
+    col_s2.metric("🏦 SALDO REAL DO EXTRATO (Sicoob)", f"R$ {saldo_final_extrato_dia:,.2f}", help="Saldo Oficial registrado ao final deste dia no extrato do Sicoob.")
     col_s3.metric("📅 Dia em Execução", data_selecionada)
 
     aba_conciliacao, aba_historico = st.tabs(["🔄 Esteira de Conciliação Diária", "📋 Histórico de Fechamento"])
@@ -324,9 +345,7 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
             else:
                 st.warning("Sem registros com os filtros atuais.")
 
-        # =========================================================================
-        # ✏️ CENTRAL DE AJUSTES MANUAIS RECUPERADA (INSERIR / EDITAR / DELETAR)
-        # =========================================================================
+        # Central de Ajustes Manuais
         st.markdown("---")
         st.markdown("### ✏️ Central de Ajustes, Edição e Mudança de Datas")
         aba_ins, aba_edt = st.tabs(["➕ Inserir Novo Ajuste Manual", "📝 Modificar / Remover Lançamentos Existentes"])
@@ -371,7 +390,7 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
                         'id': item_selecionado, 'acao': 'editar', 'desc': nova_desc.upper(), 
                         'valor': novo_val, 'data': nova_data.strftime('%d/%m/%Y')
                     })
-                    st.success("Lançamento atualizado!")
+                    st.success("Lançamento updated!")
                     st.rerun()
                 if col_b_ed2.button("🗑️ Remover permanentemente este item", use_container_width=True):
                     st.session_state[chave_modificacoes] = [m for m in st.session_state[chave_modificacoes] if m['id'] != item_selecionado]
