@@ -418,13 +418,14 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
                 row_sel = df_todos_dia[df_todos_dia['id'] == item_selecionado].iloc[0]
                 
                 col_upd1, col_upd2, col_upd3 = st.columns([2, 1, 1])
-                nova_desc = col_upd1.text_input("Modificar Descrição para:", value=row_sel['Descrição'])
-                novo_val = col_upd2.number_input("Modificar Valor para:", value=float(row_sel['Valor']), step=0.01)
-                nova_data = col_upd3.date_input("Transferir para a Data:", value=datetime.datetime.strptime(row_sel['Data'], '%d/%m/%Y').date())
+                
+                # 🛠️ CORREÇÃO CRÍTICA: Vinculando chaves explícitas nos inputs para congelar os valores na sessão
+                nova_desc = col_upd1.text_input("Modificar Descrição para:", value=row_sel['Descrição'], key=f"edt_desc_{item_selecionado}")
+                novo_val = col_upd2.number_input("Modificar Valor para:", value=float(row_sel['Valor']), step=0.01, key=f"edt_val_{item_selecionado}")
+                nova_data = col_upd3.date_input("Transferir para a Data:", value=datetime.datetime.strptime(row_sel['Data'], '%d/%m/%Y').date(), key=f"edt_dt_{item_selecionado}")
                 
                 col_b_ed1, col_b_ed2 = st.columns(2)
                 
-                # 🛠️ CORREÇÃO CRÍTICA AQUI: Identifica se é inserção manual para não deixá-la desaparecer
                 if col_b_ed1.button("💾 Gravar Alterações / Mudar Data", type="primary", use_container_width=True):
                     registro_original = next((m for m in st.session_state[chave_modificacoes] if m['id'] == item_selecionado), None)
                     
