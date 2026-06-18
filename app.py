@@ -6,11 +6,17 @@ import pandas as pd
 import re
 import io
 import datetime
+import os  # BIBLIOTECA ADICIONADA PARA GERENCIAR ARQUIVOS NO DISCO
 
 # =========================================================================
 # ⚙️ CONFIGURAÇÃO DA PÁGINA (DEVE SER O PRIMEIRO COMANDO STREAMLIT)
 # =========================================================================
 st.set_page_config(page_title="Conciliador Multi-Contas São Francisco", layout="wide")
+
+# Criando diretório físico para salvar os arquivos se ele não existir
+CACHE_DIR = "cache_arquivos"
+if not os.path.exists(CACHE_DIR):
+    os.makedirs(CACHE_DIR)
 
 # =========================================================================
 # 🔐 SISTEMA DE SEGURANÇA VIA URL PARAMS
@@ -79,11 +85,36 @@ chave_nome_sipag = f"nome_sipag_{conta_ativa}"
 chave_modificacoes = f"modificacoes_ajustes_{conta_ativa}"
 chave_dias_conciliados = f"dias_conciliados_{conta_ativa}"
 
+# Nomes de arquivos físicos no HD para persistência após F5
+arq_cache_banco = os.path.join(CACHE_DIR, f"banco_{conta_ativa}.cache")
+arq_cache_sistema = os.path.join(CACHE_DIR, f"sistema_{conta_ativa}.cache")
+arq_cache_sipag = os.path.join(CACHE_DIR, f"sipag_{conta_ativa}.cache")
+arq_cache_nome_banco = os.path.join(CACHE_DIR, f"nome_banco_{conta_ativa}.txt")
+arq_cache_nome_sistema = os.path.join(CACHE_DIR, f"nome_sistema_{conta_ativa}.txt")
+arq_cache_nome_sipag = os.path.join(CACHE_DIR, f"nome_sipag_{conta_ativa}.txt")
+
 if chave_store_banco not in st.session_state: st.session_state[chave_store_banco] = None
 if chave_store_sistema not in st.session_state: st.session_state[chave_store_sistema] = None
 if chave_store_sipag not in st.session_state: st.session_state[chave_store_sipag] = None
 if chave_modificacoes not in st.session_state: st.session_state[chave_modificacoes] = []
 if chave_dias_conciliados not in st.session_state: st.session_state[chave_dias_conciliados] = []
+
+# TENTATIVA DE RECUPERAÇÃO APÓS F5: Se a sessão sumiu, mas o arquivo físico existe no computador, lê de volta.
+if st.session_state[chave_store_banco] is None and os.path.exists(arq_cache_banco):
+    with open(arq_cache_banco, "rb") as f: st.session_state[chave_store_banco] = f.read()
+    if os.path.exists(arq_cache_nome_banco):
+        with open(arq_cache_nome_banco, "r", encoding="utf-8") as f: st.session_state[chave_nome_banco] = f.read()
+
+if st.session_state[chave_store_sistema] is None and os.path.exists(arq_cache_sistema):
+    with open(arq_cache_sistema, "rb") as f: st.session_state[chave_store_sistema] = f.read()
+    if os.path.exists(arq_cache_nome_sistema):
+        with open(arq_cache_nome_sistema, "r", encoding="utf-8") as f: st.session_state[chave_nome_sistema] = f.read()
+
+if st.session_state[chave_store_sipag] is None and os.path.exists(arq_cache_sipag):
+    with open(arq_cache_sipag, "rb") as f: st.session_state[chave_store_sipag] = f.read()
+    if os.path.exists(arq_cache_nome_sipag):
+        with open(arq_cache_nome_sipag, "r", encoding="utf-8") as f: st.session_state[chave_nome_sipag] = f.read()
+
 
 # =========================================================================
 # 📥 CARREGAMENTO DE ARQUIVOS
@@ -94,23 +125,41 @@ col_up1, col_up2, col_up3 = st.columns(3)
 with col_up1:
     u_extrato = st.file_uploader("📂 Arraste o Extrato do Sicoob:", type=["xlsx", "xls", "pdf"], key=f"widget_up_banco_{conta_ativa}")
     if u_extrato is not None:
-        st.session_state[chave_store_banco] = u_extrato.getvalue()
+        conteudo = u_extrato.getvalue()
+        st.session_state[chave_store_banco] = conteudo
         st.session_state[chave_nome_banco] = u_extrato.name
+        # Salva fisicamente no HD para resistir ao F5
+        with open(arq_cache_banco, "wb") as f: f.write(conteudo)
+        with open(arq_cache_nome_banco, "w", encoding="utf-8") as f: f.write(u_extrato.name)
+    elif st.session_state[chave_store_banco] is not None:
+        st.caption(f"✅ Recuperado do cache: `{st.session_state.get(chave_nome_banco, 'Arquivo Sicoob')}`")
 
 with col_up2:
     u_sistema = st.file_uploader("📂 Arraste o Relatório do Boletim / Sistema:", type=["xlsx", "xls", "csv", "pdf"], key=f"widget_up_sist_{conta_ativa}")
     if u_sistema is not None:
-        st.session_state[chave_store_sistema] = u_sistema.getvalue()
+        conteudo = u_sistema.getvalue()
+        st.session_state[chave_store_sistema] = conteudo
         st.session_state[chave_nome_sistema] = u_sistema.name
+        # Salva fisicamente no HD para resistir ao F5
+        with open(arq_cache_sistema, "wb") as f: f.write(conteudo)
+        with open(arq_cache_nome_sistema, "w", encoding="utf-8") as f: f.write(u_sistema.name)
+    elif st.session_state[chave_store_sistema] is not None:
+        st.caption(f"✅ Recuperado do cache: `{st.session_state.get(chave_nome_sistema, 'Arquivo Sistema')}`")
 
 with col_up3:
     u_sipag = st.file_uploader("📂 Planilha do Cartão SIPAG (CSV):", type=["csv", "xlsx"], key=f"widget_up_sipag_{conta_ativa}")
     if u_sipag is not None:
-        st.session_state[chave_store_sipag] = u_sipag.getvalue()
+        conteudo = u_sipag.getvalue()
+        st.session_state[chave_store_sipag] = conteudo
         st.session_state[chave_nome_sipag] = u_sipag.name
+        # Salva fisicamente no HD para resistir ao F5
+        with open(arq_cache_sipag, "wb") as f: f.write(conteudo)
+        with open(arq_cache_nome_sipag, "w", encoding="utf-8") as f: f.write(u_sipag.name)
+    elif st.session_state[chave_store_sipag] is not None:
+        st.caption(f"✅ Recuperado do cache: `{st.session_state.get(chave_nome_sipag, 'Arquivo SIPAG')}`")
 
 if st.session_state[chave_store_banco] or st.session_state[chave_store_sistema] or st.session_state[chave_store_sipag]:
-    if st.button("🗑️ Trocar / Limpar Arquivos da Tela", use_container_width=True):
+    if st.button("🗑️ Trocar / Limpar Arquivos e Apagar Cache", use_container_width=True):
         st.session_state[chave_store_banco] = None
         st.session_state[chave_store_sistema] = None
         st.session_state[chave_store_sipag] = None
@@ -120,6 +169,11 @@ if st.session_state[chave_store_banco] or st.session_state[chave_store_sistema] 
         st.session_state[chave_modificacoes] = []
         st.session_state[chave_dias_conciliados] = []
         if 'indice_data' in st.session_state: del st.session_state.indice_data
+        
+        # Remove fisicamente do HD para limpar de vez
+        for path in [arq_cache_banco, arq_cache_sistema, arq_cache_sipag, arq_cache_nome_banco, arq_cache_nome_sistema, arq_cache_nome_sipag]:
+            if os.path.exists(path): os.remove(path)
+            
         st.rerun()
 
 # =========================================================================
@@ -300,26 +354,22 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         
         st.markdown("---")
         st.markdown("### 👁️ Filtros de Visibilidade")
-        # FUNCIONALIDADE 2: Interruptor inteligente para esconder linhas com valores correspondentes (espelho perfeito)
         ocultar_iguais = st.toggle("Ocultar correspondências perfeitas", value=False, help="Esconde automaticamente linhas do Sicoob e do Theos que possuem valores idênticos correspondentes no dia.")
 
     df_banco_dia = df_b_orig[df_b_orig['Data'] == data_selecionada].copy()
     df_sistema_dia = df_s_orig[df_s_orig['Data'] == data_selecionada].copy() if not df_s_orig.empty else pd.DataFrame()
     df_sipag_dia = df_sipag_orig[df_sipag_orig['Data'] == data_selecionada].copy() if not df_sipag_orig.empty else pd.DataFrame()
     
-    # Lógica inteligente para identificar correspondências perfeitas (valores que batem)
     ids_banco_ocultar = set()
     ids_sistema_ocultar = set()
     
     if ocultar_iguais and not df_banco_dia.empty and not df_sistema_dia.empty:
-        # Criamos listas temporárias para dar match sem repetir o mesmo item
         valores_banco = df_banco_dia[['id', 'Valor']].to_dict('records')
         valores_sistema = df_sistema_dia[['id', 'Valor']].to_dict('records')
         
         for item_b in valores_banco:
             for item_s in valores_sistema:
                 if item_s['id'] not in ids_sistema_ocultar:
-                    # Compara se os valores absolutos batem (para tratar entrada/saída de forma flexível)
                     if abs(item_b['Valor']) == abs(item_s['Valor']):
                         ids_banco_ocultar.add(item_b['id'])
                         ids_sistema_ocultar.add(item_s['id'])
@@ -359,7 +409,6 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         df_sistema_tela = df_sistema_dia if filtro_sist == "Todos" else (df_sistema_dia[df_sistema_dia['Tipo'] == filtro_sist] if not df_sistema_dia.empty else pd.DataFrame())
         df_sipag_tela = df_sipag_dia
         
-        # Filtra na tela os registros caso a opção de ocultar correspondências perfeitas esteja ativa
         df_banco_exibicao = df_banco_tela[~df_banco_tela['id'].isin(ids_banco_ocultar)]
         df_sistema_exibicao = df_sistema_tela[~df_sistema_tela['id'].isin(ids_sistema_ocultar)] if not df_sistema_tela.empty else pd.DataFrame()
         
@@ -375,7 +424,6 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
 
         st.markdown("---")
         
-        # Inicializando chaves das caixas de marcação
         for _, row in df_banco_tela.iterrows():
             if f"chk_{row['id']}" not in st.session_state: st.session_state[f"chk_{row['id']}"] = False
         if not df_sistema_tela.empty:
@@ -387,7 +435,6 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         with col1:
             st.markdown('<div class="titulo-coluna">🏦 Extrato Sicoob</div>', unsafe_allow_html=True)
             
-            # FUNCIONALIDADE 1: Botões de selecionar/retirar seleção em lote para o Extrato Sicoob
             c_sel1, c_sel2 = st.columns(2)
             if c_sel1.button("✅ Marcar Todos (Sicoob)", key="btn_sel_all_banco", use_container_width=True):
                 for _, row in df_banco_exibicao.iterrows(): st.session_state[f"chk_{row['id']}"] = True
@@ -408,7 +455,6 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         with col2:
             st.markdown('<div class="titulo-coluna-igreja">⛪ Paróquia / Boletim Theos</div>', unsafe_allow_html=True)
             
-            # FUNCIONALIDADE 1: Botões de selecionar/retirar seleção em lote para o Boletim Theos
             if not df_sistema_exibicao.empty:
                 c_sel3, c_sel4 = st.columns(2)
                 if c_sel3.button("✅ Marcar Todos (Theos)", key="btn_sel_all_sist", use_container_width=True):
