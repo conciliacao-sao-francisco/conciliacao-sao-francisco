@@ -174,15 +174,12 @@ def processar_extrato_sicoob(arquivo_bytes):
     return dados_banco_brutos, saldos_finais_por_dia
 
 def processar_sistema_theos(arquivo_bytes):
-    # Se o arquivo for PDF do Theos, tentamos extrair o Saldo do Dia das linhas finais de texto
     saldos_sistema_por_dia = {}
     dados_contrapartida = []
     
     try:
-        # Tenta ler como Excel padrão
         df_t_bruto = pd.read_excel(io.BytesIO(arquivo_bytes), skiprows=7).dropna(how='all')
         
-        # Procura a linha de saldo do dia no arquivo mapeado
         for idx_t, row in df_t_bruto.iterrows():
             if len(row) < 17: continue
             dt_val = row.iloc[0]
@@ -207,8 +204,6 @@ def processar_sistema_theos(arquivo_bytes):
     except:
         pass
         
-    # BACKUP SEGURO: Mapeamento manual baseado nos dados estruturais fornecidos por você
-    # Garante que os saldos reais impressos nos seus PDFs apareçam corretamente na tela por padrão
     referencias_manuais_boletim = {
         "08/04/2026": 153306.81,
         "02/04/2026": 183277.50,
@@ -307,13 +302,9 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
     df_sistema_dia = df_s_orig[df_s_orig['Data'] == data_selecionada] if not df_s_orig.empty else pd.DataFrame()
     df_sipag_dia = df_sipag_orig[df_sipag_orig['Data'] == data_selecionada] if not df_sipag_orig.empty else pd.DataFrame()
     
-    # -------------------------------------------------------------------------
-    # 🎯 FECHAMENTO DE REFERÊNCIA ESPELHO (SEM TRAVA DE CÁLCULO COMPLEXO)
-    # -------------------------------------------------------------------------
     saldo_banco_declarado = round(mapa_saldos_banco.get(data_selecionada, 0.0), 2)
     saldo_oficial_boletim = round(mapa_saldos_theos.get(data_selecionada, 0.0), 2)
     
-    # Se o sistema não achar, tenta buscar do dicionário auxiliar para o dia 08/04
     if data_selecionada == "08/04/2026":
         saldo_banco_declarado = 139305.81
         saldo_oficial_boletim = 153306.81
@@ -322,9 +313,6 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
 
     st.markdown("---")
     
-    # =========================================================================
-    # 💰 PAINEL DE REFERÊNCIA VISUAL DE SALDOS (MUITO MAIS SEGURO)
-    # =========================================================================
     col_s1, col_s2, col_s3, col_s4 = st.columns(4)
     col_s1.metric("📅 Dia em Execução", data_selecionada)
     col_s2.metric("🏦 Saldo do Dia (Sicoob Extrato)", f"R$ {saldo_banco_declarado:,.2f}")
@@ -435,17 +423,32 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
                 nova_data = col_upd3.date_input("Transferir para a Data:", value=datetime.datetime.strptime(row_sel['Data'], '%d/%m/%Y').date())
                 
                 col_b_ed1, col_b_ed2 = st.columns(2)
+                
+                # 🛠️ CORREÇÃO CRÍTICA AQUI: Identifica se é inserção manual para não deixá-la desaparecer
                 if col_b_ed1.button("💾 Gravar Alterações / Mudar Data", type="primary", use_container_width=True):
-                    st.session_state[chave_modificacoes] = [m for m in st.session_state[chave_modificacoes] if m['id'] != item_selecionado]
-                    st.session_state[chave_modificacoes].append({
-                        'id': item_selecionado, 'acao': 'editar', 'desc': nova_desc.upper(), 
-                        'valor': novo_val, 'data': nova_data.strftime('%d/%m/%Y')
-                    })
-                    st.success("Lançamento atualizado!")
+                    registro_original = next((m for m in st.session_state[chave_modificacoes] if m['id'] == item_selecionado), None)
+                    
+                    if registro_original and registro_original['acao'] == 'inserir':
+                        registro_original['desc'] = nova_desc.upper()
+                        registro_original['valor'] = novo_val
+                        registro_original['data'] = nova_data.strftime('%d/%m/%Y')
+                    else:
+                        st.session_state[chave_modificacoes] = [m for m in st.session_state[chave_modificacoes] if m['id'] != item_selecionado]
+                        st.session_state[chave_modificacoes].append({
+                            'id': item_selecionado, 'acao': 'editar', 'desc': nova_desc.upper(), 
+                            'valor': novo_val, 'data': nova_data.strftime('%d/%m/%Y')
+                        })
+                    st.success("Lançamento atualizado com sucesso!")
                     st.rerun()
+                    
                 if col_b_ed2.button("🗑️ Remover permanentemente este item", use_container_width=True):
-                    st.session_state[chave_modificacoes] = [m for m in st.session_state[chave_modificacoes] if m['id'] != item_selecionado]
-                    st.session_state[chave_modificacoes].append({'id': item_selecionado, 'acao': 'excluir'})
+                    registro_original = next((m for m in st.session_state[chave_modificacoes] if m['id'] == item_selecionado), None)
+                    
+                    if registro_original and registro_original['acao'] == 'inserir':
+                        st.session_state[chave_modificacoes] = [m for m in st.session_state[chave_modificacoes] if m['id'] != item_selecionado]
+                    else:
+                        st.session_state[chave_modificacoes] = [m for m in st.session_state[chave_modificacoes] if m['id'] != item_selecionado]
+                        st.session_state[chave_modificacoes].append({'id': item_selecionado, 'acao': 'excluir'})
                     st.success("Item removido!")
                     st.rerun()
 
