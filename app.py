@@ -1,3 +1,14 @@
+Com certeza! Ter um botão de **"Desfazer Última Ação" (Undo)** traz uma segurança enorme para o uso diário, caso você oculte algo por engano.
+
+Para fazer isso, vamos transformar a nossa memória simples (`baixados_manualmente`) em uma **pilha de histórico (uma lista)**. Assim, toda vez que você clicar em ocultar, o sistema lembra exatamente quais IDs foram ocultados *naquela rodada específica*. Se você clicar em "Desfazer", ele resgata apenas o último grupo ocultado e devolve para a tela, sem mexer no resto.
+
+---
+
+### 💻 Código Atualizado com o Botão "Desfazer Última Ação"
+
+Substitua o código do seu `app.py` por esta versão. Note que adicionei o botão **"↩️ Desfazer Última Ocultação"** logo abaixo do botão de ocultar e também limpei os textos da barra lateral para o painel ficar mais enxuto.
+
+```python
 import logging
 logging.getLogger("asyncio").setLevel(logging.CRITICAL)  # Silencia avisos no terminal
 
@@ -84,14 +95,14 @@ chave_nome_sistema = f"nome_sistema_{conta_ativa}"
 chave_nome_sipag = f"nome_sipag_{conta_ativa}"
 chave_modificacoes = f"modificacoes_ajustes_{conta_ativa}"
 chave_dias_conciliados = f"dias_conciliados_{conta_ativa}"
-chave_baixados_manualmente = f"baixados_manualmente_{conta_ativa}" # NOVA CHAVE ADICIONADA
+chave_historico_ocultacoes = f"historico_ocultacoes_{conta_ativa}" # Armazena pilhas de listas ocultadas
 
 if chave_store_banco not in st.session_state: st.session_state[chave_store_banco] = None
 if chave_store_sistema not in st.session_state: st.session_state[chave_store_sistema] = None
 if chave_store_sipag not in st.session_state: st.session_state[chave_store_sipag] = None
 if chave_modificacoes not in st.session_state: st.session_state[chave_modificacoes] = []
 if chave_dias_conciliados not in st.session_state: st.session_state[chave_dias_conciliados] = []
-if chave_baixados_manualmente not in st.session_state: st.session_state[chave_baixados_manualmente] = set()
+if chave_historico_ocultacoes not in st.session_state: st.session_state[chave_historico_ocultacoes] = []
 
 # Nomes de arquivos físicos no HD para persistência após F5
 arq_cache_banco = os.path.join(CACHE_DIR, f"banco_{conta_ativa}.cache")
@@ -167,7 +178,7 @@ if st.session_state[chave_store_banco] or st.session_state[chave_store_sistema] 
         st.session_state[chave_nome_sipag] = None
         st.session_state[chave_modificacoes] = []
         st.session_state[chave_dias_conciliados] = []
-        st.session_state[chave_baixados_manualmente] = set()
+        st.session_state[chave_historico_ocultacoes] = []
         if 'indice_data' in st.session_state: del st.session_state.indice_data
         
         for path in [arq_cache_banco, arq_cache_sistema, arq_cache_sipag, arq_cache_nome_banco, arq_cache_nome_sistema, arq_cache_nome_sipag]:
@@ -352,21 +363,26 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         st.session_state.indice_data = datas_pendentes.index(data_selecionada)
         
         st.markdown("---")
-        st.markdown("### 🔄 Histórico de Ocultação")
-        if st.session_state[chave_baixados_manualmente]:
-            if st.button("🔄 Trazer Itens Ocultados de Volta", use_container_width=True, type="secondary"):
-                st.session_state[chave_baixados_manualmente] = set()
-                st.toast("Todos os itens marcados foram devolvidos à tela!", icon="🔄")
+        st.markdown("### 🔄 Limpeza de Filtros")
+        if st.session_state[chave_historico_ocultacoes]:
+            if st.button("🗑️ Resetar Tudo (Voltar todos)", use_container_width=True, type="secondary"):
+                st.session_state[chave_historico_ocultacoes] = []
+                st.toast("Todos os itens ocultados voltaram para a tela!", icon="🔄")
                 st.rerun()
 
     df_banco_dia = df_b_orig[df_b_orig['Data'] == data_selecionada].copy()
     df_sistema_dia = df_s_orig[df_s_orig['Data'] == data_selecionada].copy() if not df_s_orig.empty else pd.DataFrame()
     df_sipag_dia = df_sipag_orig[df_sipag_orig['Data'] == data_selecionada].copy() if not df_sipag_orig.empty else pd.DataFrame()
 
-    # FILTRAGEM RIGOROSA DA TELA: Remove os itens que foram marcados para ocultação manual
-    df_banco_dia = df_banco_dia[~df_banco_dia['id'].isin(st.session_state[chave_baixados_manualmente])]
+    # Consolidando todos os IDs ocultados do histórico para filtragem na tela
+    todos_ocultados = set()
+    for lista_ids in st.session_state[chave_historico_ocultacoes]:
+        todos_ocultados.update(lista_ids)
+
+    # FILTRAGEM: Remove os itens ocultados da visualização
+    df_banco_dia = df_banco_dia[~df_banco_dia['id'].isin(todos_ocultados)]
     if not df_sistema_dia.empty:
-        df_sistema_dia = df_sistema_dia[~df_sistema_dia['id'].isin(st.session_state[chave_baixados_manualmente])]
+        df_sistema_dia = df_sistema_dia[~df_sistema_dia['id'].isin(todos_ocultados)]
 
     saldo_banco_declarado = round(mapa_saldos_banco.get(data_selecionada, 0.0), 2)
     saldo_oficial_boletim = round(mapa_saldos_theos.get(data_selecionada, 0.0), 2)
@@ -411,23 +427,36 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
 
         st.markdown("<br>", unsafe_allow_html=True)
         
-        # BOTÃO SOLICITADO: ACESSA AS SELEÇÕES ATUAIS DAS DUAS COLUNAS E REALIZA A OCULTAÇÃO CONJUNTA
-        if st.button("💥 Colocar como OK e Ocultar Itens Selecionados", type="primary", use_container_width=True, help="Oculta definitivamente da tela os registros marcados manualmente nas caixinhas."):
-            ids_para_ocultar_agora = set()
-            for _, row in df_banco_tela.iterrows():
-                if st.session_state.get(f"chk_{row['id']}", False): ids_para_ocultar_agora.add(row['id'])
-            if not df_sistema_tela.empty:
-                for _, row in df_sistema_tela.iterrows():
-                    if st.session_state.get(f"chk_{row['id']}", False): ids_para_ocultar_agora.add(row['id'])
+        # BOTÕES DE AÇÃO PRINCIPAL
+        col_btn1, col_btn2 = st.columns([2, 1])
+        
+        with col_btn1:
+            if st.button("💥 Colocar como OK e Ocultar Itens Selecionados", type="primary", use_container_width=True):
+                ids_para_ocultar_agora = []
+                for _, row in df_banco_tela.iterrows():
+                    if st.session_state.get(f"chk_{row['id']}", False): ids_para_ocultar_agora.append(row['id'])
+                if not df_sistema_tela.empty:
+                    for _, row in df_sistema_tela.iterrows():
+                        if st.session_state.get(f"chk_{row['id']}", False): ids_para_ocultar_agora.append(row['id'])
+                        
+                if ids_para_ocultar_agora:
+                    # Adiciona essa lista de IDs como a última jogada no histórico
+                    st.session_state[chave_historico_ocultacoes].append(ids_para_ocultar_agora)
+                    # Reseta os checks visuais
+                    for idx_id in ids_para_ocultar_agora: st.session_state[f"chk_{idx_id}"] = False
+                    st.toast("Itens enviados para baixa e ocultados com sucesso!", icon="✅")
+                    st.rerun()
+                else:
+                    st.warning("Marque ao menos uma caixinha antes de acionar este comando!")
                     
-            if ids_para_ocultar_agora:
-                st.session_state[chave_baixados_manualmente].update(ids_para_ocultar_agora)
-                # Limpa o estado visual dos checks para evitar reuso acidental
-                for idx_id in ids_para_ocultar_agora: st.session_state[f"chk_{idx_id}"] = False
-                st.toast("Itens enviados para baixa e ocultados com sucesso!", icon="✅")
+        with col_btn2:
+            # BOTÃO SOLICITADO: Desfaz única e exclusivamente o último bloco enviado
+            desabilitar_desfazer = len(st.session_state[chave_historico_ocultacoes]) == 0
+            if st.button("↩️ Desfazer Última Ocultação", use_container_width=True, disabled=desabilitar_desfazer, help="Traz de volta o último grupo de itens que você acabou de ocultar."):
+                # Remove o último elemento inserido na nossa lista de histórico
+                ultimo_bloco_removido = st.session_state[chave_historico_ocultacoes].pop()
+                st.toast(f"Desfeito! {len(ultimo_bloco_removido)} itens retornaram para as tabelas.", icon="↩️")
                 st.rerun()
-            else:
-                st.warning("Marque ao menos uma caixinha antes de acionar este comando!")
 
         st.markdown("---")
 
@@ -563,3 +592,5 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         if st.session_state[chave_dias_conciliados]:
             for d in st.session_state[chave_dias_conciliados]:
                 st.success(f"📆 Dia {d} -> **CONCILIADO E PRONTO**")
+
+```
