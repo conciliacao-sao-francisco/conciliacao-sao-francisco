@@ -7,6 +7,7 @@ import re
 import io
 import datetime
 import os
+import json  # Adicionado para salvar os ajustes estruturados no disco
 
 # =========================================================================
 # ⚙️ CONFIGURAÇÃO DA PÁGINA (DEVE SER O PRIMEIRO COMANDO STREAMLIT)
@@ -84,7 +85,8 @@ chave_nome_sistema = f"nome_sistema_{conta_ativa}"
 chave_nome_sipag = f"nome_sipag_{conta_ativa}"
 chave_modificacoes = f"modificacoes_ajustes_{conta_ativa}"
 chave_dias_conciliados = f"dias_conciliados_{conta_ativa}"
-chave_historico_ocultacoes = f"historico_ocultacoes_{conta_ativa}" # Armazena pilhas de listas ocultadas
+chave_historico_ocultacoes = f"historico_ocultacoes_{conta_ativa}"
+chave_data_atual_salva = f"data_salva_progresso_{conta_ativa}"
 
 if chave_store_banco not in st.session_state: st.session_state[chave_store_banco] = None
 if chave_store_sistema not in st.session_state: st.session_state[chave_store_sistema] = None
@@ -101,7 +103,13 @@ arq_cache_nome_banco = os.path.join(CACHE_DIR, f"nome_banco_{conta_ativa}.txt")
 arq_cache_nome_sistema = os.path.join(CACHE_DIR, f"nome_sistema_{conta_ativa}.txt")
 arq_cache_nome_sipag = os.path.join(CACHE_DIR, f"nome_sipag_{conta_ativa}.txt")
 
-# TENTATIVA DE RECUPERAÇÃO APÓS F5
+# ARQUIVOS DE CACHE PARA MODIFICAÇÕES E ESTADO DO SISTEMA
+arq_cache_modificacoes = os.path.join(CACHE_DIR, f"ajustes_{conta_ativa}.json")
+arq_cache_dias_conciliados = os.path.join(CACHE_DIR, f"dias_ok_{conta_ativa}.json")
+arq_cache_historico_ocultacoes = os.path.join(CACHE_DIR, f"ocultados_{conta_ativa}.json")
+arq_cache_data_ativa = os.path.join(CACHE_DIR, f"data_ativa_{conta_ativa}.txt")
+
+# TENTATIVA DE RECUPERAÇÃO DOS ARQUIVOS BRUTOS APÓS REFRESH
 if st.session_state[chave_store_banco] is None and os.path.exists(arq_cache_banco):
     with open(arq_cache_banco, "rb") as f: st.session_state[chave_store_banco] = f.read()
     if os.path.exists(arq_cache_nome_banco):
@@ -117,6 +125,21 @@ if st.session_state[chave_store_sipag] is None and os.path.exists(arq_cache_sipa
     if os.path.exists(arq_cache_nome_sipag):
         with open(arq_cache_nome_sipag, "r", encoding="utf-8") as f: st.session_state[chave_nome_sipag] = f.read()
 
+# RECUPERAÇÃO DAS REGRAS, AJUSTES E DIAS BAIXADOS DO DISCO DURA SE EXISTIREM
+if not st.session_state[chave_modificacoes] and os.path.exists(arq_cache_modificacoes):
+    try:
+        with open(arq_cache_modificacoes, "r", encoding="utf-8") as f: st.session_state[chave_modificacoes] = json.load(f)
+    except: pass
+
+if not st.session_state[chave_dias_conciliados] and os.path.exists(arq_cache_dias_conciliados):
+    try:
+        with open(arq_cache_dias_conciliados, "r", encoding="utf-8") as f: st.session_state[chave_dias_conciliados] = json.load(f)
+    except: pass
+
+if not st.session_state[chave_historico_ocultacoes] and os.path.exists(arq_cache_historico_ocultacoes):
+    try:
+        with open(arq_cache_historico_ocultacoes, "r", encoding="utf-8") as f: st.session_state[chave_historico_ocultacoes] = json.load(f)
+    except: pass
 
 # =========================================================================
 # 📥 CARREGAMENTO DE ARQUIVOS
@@ -158,7 +181,7 @@ with col_up3:
         st.caption(f"✅ Recuperado do cache: `{st.session_state.get(chave_nome_sipag, 'Arquivo SIPAG')}`")
 
 if st.session_state[chave_store_banco] or st.session_state[chave_store_sistema] or st.session_state[chave_store_sipag]:
-    if st.button("🗑️ Trocar / Limpar Arquivos e Apagar Cache", use_container_width=True):
+    if st.button("🗑️ Trocar / Limpar Arquivos e Apagar Cache Completamente", use_container_width=True):
         st.session_state[chave_store_banco] = None
         st.session_state[chave_store_sistema] = None
         st.session_state[chave_store_sipag] = None
@@ -170,7 +193,13 @@ if st.session_state[chave_store_banco] or st.session_state[chave_store_sistema] 
         st.session_state[chave_historico_ocultacoes] = []
         if 'indice_data' in st.session_state: del st.session_state.indice_data
         
-        for path in [arq_cache_banco, arq_cache_sistema, arq_cache_sipag, arq_cache_nome_banco, arq_cache_nome_sistema, arq_cache_nome_sipag]:
+        # Apaga fisicamente do HD todos os arquivos de salvamento automático
+        arquivos_para_deletar = [
+            arq_cache_banco, arq_cache_sistema, arq_cache_sipag, 
+            arq_cache_nome_banco, arq_cache_nome_sistema, arq_cache_nome_sipag,
+            arq_cache_modificacoes, arq_cache_dias_conciliados, arq_cache_historico_ocultacoes, arq_cache_data_ativa
+        ]
+        for path in arquivos_para_deletar:
             if os.path.exists(path): os.remove(path)
             
         st.rerun()
@@ -319,7 +348,7 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
     if st.session_state[chave_store_sipag]:
         df_sipag_orig = processar_sipag_csv(st.session_state[chave_store_sipag])
 
-    # Aplicando modificações históricas
+    # Aplicando modificações históricas que foram carregadas do disco
     for mod in st.session_state[chave_modificacoes]:
         if mod['acao'] == 'excluir':
             df_b_orig = df_b_orig[df_b_orig['id'] != mod['id']]
@@ -343,19 +372,33 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         st.success("🎉 Todos os dias desse período foram totalmente conciliados!")
         st.stop()
 
-    if 'indice_data' not in st.session_state or st.session_state.indice_data >= len(datas_pendentes):
+    # TENTATIVA DE RECUPERAR A ÚLTIMA DATA ATIVA SALVA ANTES DO F5
+    if 'indice_data' not in st.session_state:
+        data_inicial_recuperada = datas_pendentes[0]
+        if os.path.exists(arq_cache_data_ativa):
+            with open(arq_cache_data_ativa, "r", encoding="utf-8") as f:
+                saved_dt = f.read().strip()
+                if saved_dt in datas_pendentes:
+                    data_inicial_recuperada = saved_dt
+        st.session_state.indice_data = datas_pendentes.index(data_inicial_recuperada)
+        
+    if st.session_state.indice_data >= len(datas_pendentes):
         st.session_state.indice_data = 0
 
     with st.sidebar:
         st.markdown("### 🎛️ Controle de Datas")
         data_selecionada = st.selectbox("📆 Dias Pendentes de Baixa:", datas_pendentes, index=st.session_state.indice_data)
+        
+        # Salvando imediatamente a nova data escolhida no HD
         st.session_state.indice_data = datas_pendentes.index(data_selecionada)
+        with open(arq_cache_data_ativa, "w", encoding="utf-8") as f: f.write(data_selecionada)
         
         st.markdown("---")
         st.markdown("### 🔄 Limpeza de Filtros")
         if st.session_state[chave_historico_ocultacoes]:
-            if st.button("🗑️ Resetar Tudo (Voltar todos)", use_container_width=True, type="secondary"):
+            if st.button("🗑️ Resetar Ocultações (Voltar todos)", use_container_width=True, type="secondary"):
                 st.session_state[chave_historico_ocultacoes] = []
+                if os.path.exists(arq_cache_historico_ocultacoes): os.remove(arq_cache_historico_ocultacoes)
                 st.toast("Todos os itens ocultados voltaram para a tela!", icon="🔄")
                 st.rerun()
 
@@ -407,7 +450,6 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         df_sistema_tela = df_sistema_dia if filtro_sist == "Todos" else (df_sistema_dia[df_sistema_dia['Tipo'] == filtro_sist] if not df_sistema_dia.empty else pd.DataFrame())
         df_sipag_tela = df_sipag_dia
         
-        # Inicializa chaves de checkbox pendentes
         for _, row in df_banco_tela.iterrows():
             if f"chk_{row['id']}" not in st.session_state: st.session_state[f"chk_{row['id']}"] = False
         if not df_sistema_tela.empty:
@@ -429,9 +471,11 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
                         if st.session_state.get(f"chk_{row['id']}", False): ids_para_ocultar_agora.append(row['id'])
                         
                 if ids_para_ocultar_agora:
-                    # Adiciona essa lista de IDs como a última jogada no histórico
                     st.session_state[chave_historico_ocultacoes].append(ids_para_ocultar_agora)
-                    # Reseta os checks visuais
+                    # SALVAMENTO AUTOMÁTICO DO HISTÓRICO DE OCULTAÇÕES NO DISCO
+                    with open(arq_cache_historico_ocultacoes, "w", encoding="utf-8") as f:
+                        json.dump(st.session_state[chave_historico_ocultacoes], f, ensure_ascii=False)
+                        
                     for idx_id in ids_para_ocultar_agora: st.session_state[f"chk_{idx_id}"] = False
                     st.toast("Itens enviados para baixa e ocultados com sucesso!", icon="✅")
                     st.rerun()
@@ -439,12 +483,13 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
                     st.warning("Marque ao menos uma caixinha antes de acionar este comando!")
                     
         with col_btn2:
-            # BOTÃO SOLICITADO: Desfaz única e exclusivamente o último bloco enviado
             desabilitar_desfazer = len(st.session_state[chave_historico_ocultacoes]) == 0
-            if st.button("↩️ Desfazer Última Ocultação", use_container_width=True, disabled=desabilitar_desfazer, help="Traz de volta o último grupo de itens que você acabou de ocultar."):
-                # Remove o último elemento inserido na nossa lista de histórico
+            if st.button("↩️ Desfazer Última Ocultação", use_container_width=True, disabled=desabilitar_desfazer):
                 ultimo_bloco_removido = st.session_state[chave_historico_ocultacoes].pop()
-                st.toast(f"Desfeito! {len(ultimo_bloco_removido)} itens retornaram para as tabelas.", icon="↩️")
+                # Atualiza o arquivo no disco após remover
+                with open(arq_cache_historico_ocultacoes, "w", encoding="utf-8") as f:
+                    json.dump(st.session_state[chave_historico_ocultacoes], f, ensure_ascii=False)
+                st.toast(f"Desfeito! {len(ultimo_bloco_removido)} itens retornaram.", icon="↩️")
                 st.rerun()
 
         st.markdown("---")
@@ -505,6 +550,11 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         st.markdown("---")
         if st.button("⚡ Confirmar Finalização Completa do Dia", type="secondary", use_container_width=True):
             st.session_state[chave_dias_conciliados].append(data_selecionada)
+            
+            # SALVAMENTO AUTOMÁTICO DOS DIAS CONCILIADOS NO HD
+            with open(arq_cache_dias_conciliados, "w", encoding="utf-8") as f:
+                json.dump(st.session_state[chave_dias_conciliados], f, ensure_ascii=False)
+                
             st.toast(f"✅ Dia {data_selecionada} arquivado com sucesso!")
             st.rerun()
 
@@ -527,7 +577,10 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
                     'id': id_gerado, 'acao': 'inserir', 'desc': desc_ajuste.upper(),
                     'valor': val_ajuste, 'origem': origem_convertida, 'data': dt_ajuste.strftime('%d/%m/%Y')}
                 )
-                st.success("Ajuste injetado!")
+                # SALVAMENTO AUTOMÁTICO DO NOVO AJUSTE NO HD
+                with open(arq_cache_modificacoes, "w", encoding="utf-8") as f:
+                    json.dump(st.session_state[chave_modificacoes], f, ensure_ascii=False)
+                st.success("Ajuste injetado e salvo fisicamente!")
                 st.rerun()
 
         with aba_edt:
@@ -562,7 +615,10 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
                             'id': item_selecionado, 'acao': 'editar', 'desc': nova_desc.upper(), 
                             'valor': novo_val, 'data': nova_data.strftime('%d/%m/%Y')
                         })
-                    st.success("Lançamento updated com sucesso!")
+                    # SALVAMENTO AUTOMÁTICO DAS EDIÇÕES NO HD
+                    with open(arq_cache_modificacoes, "w", encoding="utf-8") as f:
+                        json.dump(st.session_state[chave_modificacoes], f, ensure_ascii=False)
+                    st.success("Lançamento atualizado e salvo!")
                     st.rerun()
                     
                 if col_b_ed2.button("🗑️ Remover permanentemente este item", use_container_width=True):
@@ -573,7 +629,10 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
                     else:
                         st.session_state[chave_modificacoes] = [m for m in st.session_state[chave_modificacoes] if m['id'] != item_selecionado]
                         st.session_state[chave_modificacoes].append({'id': item_selecionado, 'acao': 'excluir'})
-                    st.success("Item removido!")
+                    # SALVAMENTO AUTOMÁTICO DAS EXCLUSÕES NO HD
+                    with open(arq_cache_modificacoes, "w", encoding="utf-8") as f:
+                        json.dump(st.session_state[chave_modificacoes], f, ensure_ascii=False)
+                    st.success("Item removido e registrado!")
                     st.rerun()
 
     with aba_historico:
