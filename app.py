@@ -81,11 +81,11 @@ conta_ativa = st.selectbox(
 chave_store_banco = f"bytes_banco_{conta_ativa}"
 chave_store_sistema = f"bytes_sistema_{conta_ativa}"
 chave_store_sipag = f"bytes_sipag_{conta_ativa}"
-chave_store_campanha = f"bytes_campanha_{conta_ativa}"  # ➕ ACRESCENTADO
+chave_store_campanha = f"bytes_campanha_{conta_ativa}"
 chave_nome_banco = f"nome_banco_{conta_ativa}"
 chave_nome_sistema = f"nome_sistema_{conta_ativa}"
 chave_nome_sipag = f"nome_sipag_{conta_ativa}"
-chave_nome_campanha = f"nome_campanha_{conta_ativa}"  # ➕ ACRESCENTADO
+chave_nome_campanha = f"nome_campanha_{conta_ativa}"
 chave_modificacoes = f"modificacoes_ajustes_{conta_ativa}"
 chave_dias_conciliados = f"dias_conciliados_{conta_ativa}"
 chave_historico_ocultacoes = f"historico_ocultacoes_{conta_ativa}"
@@ -94,7 +94,7 @@ chave_data_atual_salva = f"data_salva_progresso_{conta_ativa}"
 if chave_store_banco not in st.session_state: st.session_state[chave_store_banco] = None
 if chave_store_sistema not in st.session_state: st.session_state[chave_store_sistema] = None
 if chave_store_sipag not in st.session_state: st.session_state[chave_store_sipag] = None
-if chave_store_campanha not in st.session_state: st.session_state[chave_store_campanha] = None  # ➕ ACRESCENTADO
+if chave_store_campanha not in st.session_state: st.session_state[chave_store_campanha] = None
 if chave_modificacoes not in st.session_state: st.session_state[chave_modificacoes] = []
 if chave_dias_conciliados not in st.session_state: st.session_state[chave_dias_conciliados] = []
 if chave_historico_ocultacoes not in st.session_state: st.session_state[chave_historico_ocultacoes] = []
@@ -103,11 +103,11 @@ if chave_historico_ocultacoes not in st.session_state: st.session_state[chave_hi
 arq_cache_banco = os.path.join(CACHE_DIR, f"banco_{conta_ativa}.cache")
 arq_cache_sistema = os.path.join(CACHE_DIR, f"sistema_{conta_ativa}.cache")
 arq_cache_sipag = os.path.join(CACHE_DIR, f"sipag_{conta_ativa}.cache")
-arq_cache_campanha = os.path.join(CACHE_DIR, f"campanha_{conta_ativa}.cache")  # ➕ ACRESCENTADO
+arq_cache_campanha = os.path.join(CACHE_DIR, f"campanha_{conta_ativa}.cache")
 arq_cache_nome_banco = os.path.join(CACHE_DIR, f"nome_banco_{conta_ativa}.txt")
 arq_cache_nome_sistema = os.path.join(CACHE_DIR, f"nome_sistema_{conta_ativa}.txt")
 arq_cache_nome_sipag = os.path.join(CACHE_DIR, f"nome_sipag_{conta_ativa}.txt")
-arq_cache_nome_campanha = os.path.join(CACHE_DIR, f"nome_campanha_{conta_ativa}.txt")  # ➕ ACRESCENTADO
+arq_cache_nome_campanha = os.path.join(CACHE_DIR, f"nome_campanha_{conta_ativa}.txt")
 
 # ARQUIVOS DE CACHE PARA MODIFICAÇÕES E ESTADO DO SISTEMA
 arq_cache_modificacoes = os.path.join(CACHE_DIR, f"ajustes_{conta_ativa}.json")
@@ -131,7 +131,7 @@ if st.session_state[chave_store_sipag] is None and os.path.exists(arq_cache_sipa
     if os.path.exists(arq_cache_nome_sipag):
         with open(arq_cache_nome_sipag, "r", encoding="utf-8") as f: st.session_state[chave_nome_sipag] = f.read()
 
-if st.session_state[chave_store_campanha] is None and os.path.exists(arq_cache_campanha):  # ➕ ACRESCENTADO
+if st.session_state[chave_store_campanha] is None and os.path.exists(arq_cache_campanha):
     with open(arq_cache_campanha, "rb") as f: st.session_state[chave_store_campanha] = f.read()
     if os.path.exists(arq_cache_nome_campanha):
         with open(arq_cache_nome_campanha, "r", encoding="utf-8") as f: st.session_state[chave_nome_campanha] = f.read()
@@ -156,7 +156,7 @@ if not st.session_state[chave_historico_ocultacoes] and os.path.exists(arq_cache
 # 📥 CARREGAMENTO DE ARQUIVOS
 # =========================================================================
 st.markdown("### 📥 Carregar Arquivos do Período")
-col_up1, col_up2, col_up3, col_up4 = st.columns(4)  # MUDADO PARA 4 COLUNAS
+col_up1, col_up2, col_up3, col_up4 = st.columns(4)
 
 with col_up1:
     u_extrato = st.file_uploader("📂 Arraste o Extrato do Sicoob:", type=["xlsx", "xls", "pdf"], key=f"widget_up_banco_{conta_ativa}")
@@ -191,7 +191,7 @@ with col_up3:
     elif st.session_state[chave_store_sipag] is not None:
         st.caption(f"✅ SIPAG: `{st.session_state.get(chave_nome_sipag, 'Arquivo SIPAG')}`")
 
-with col_up4:  # ➕ ACRESCENTADO: Input da planilha de Campanha
+with col_up4:
     u_campanha = st.file_uploader("📂 Planilha Cartão Campanha (CSV/XLSX):", type=["csv", "xlsx"], key=f"widget_up_campanha_{conta_ativa}")
     if u_campanha is not None:
         conteudo = u_campanha.getvalue()
@@ -207,17 +207,16 @@ if st.session_state[chave_store_banco] or st.session_state[chave_store_sistema] 
         st.session_state[chave_store_banco] = None
         st.session_state[chave_store_sistema] = None
         st.session_state[chave_store_sipag] = None
-        st.session_state[chave_store_campanha] = None  # ➕ ACRESCENTADO
+        st.session_state[chave_store_campanha] = None
         st.session_state[chave_nome_banco] = None
         st.session_state[chave_nome_sistema] = None
         st.session_state[chave_nome_sipag] = None
-        st.session_state[chave_nome_campanha] = None  # ➕ ACRESCENTADO
+        st.session_state[chave_nome_campanha] = None
         st.session_state[chave_modificacoes] = []
         st.session_state[chave_dias_conciliados] = []
         st.session_state[chave_historico_ocultacoes] = []
         if 'indice_data' in st.session_state: del st.session_state.indice_data
         
-        # Apaga fisicamente do HD todos os arquivos de salvamento automático
         arquivos_para_deletar = [
             arq_cache_banco, arq_cache_sistema, arq_cache_sipag, arq_cache_campanha,
             arq_cache_nome_banco, arq_cache_nome_sistema, arq_cache_nome_sipag, arq_cache_nome_campanha,
@@ -349,7 +348,6 @@ def processar_sipag_csv(arquivo_bytes):
     except: return pd.DataFrame()
 
 def processar_campanha_generic(arquivo_bytes, nome_arquivo):
-    # ➕ ACRESCENTADO: Tratamento dinâmico inteligente para ler qualquer formato da planilha de Campanha
     try:
         if nome_arquivo.endswith('.csv'):
             df = pd.read_csv(io.BytesIO(arquivo_bytes), sep=None, engine='python')
@@ -361,7 +359,6 @@ def processar_campanha_generic(arquivo_bytes, nome_arquivo):
             cc_valores = [str(val).strip() for val in row.values if pd.notna(val)]
             if not cc_valores: continue
             
-            # Tenta localizar uma data na linha
             dt_f = datetime.date.today().strftime('%d/%m/%Y')
             for val in cc_valores:
                 if '/' in val and len(val) >= 8:
@@ -370,7 +367,6 @@ def processar_campanha_generic(arquivo_bytes, nome_arquivo):
                         break
                     except: pass
 
-            # Tenta extrair valores numéricos da linha
             valores_numericos = []
             for val in row.values:
                 if pd.notna(val) and isinstance(val, (int, float)):
@@ -426,7 +422,7 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
     if st.session_state[chave_store_sipag]:
         df_sipag_orig = processar_sipag_csv(st.session_state[chave_store_sipag])
 
-    df_campanha_orig = pd.DataFrame()  # ➕ ACRESCENTADO
+    df_campanha_orig = pd.DataFrame()
     if st.session_state[chave_store_campanha]:
         df_campanha_orig = processar_campanha_generic(st.session_state[chave_store_campanha], st.session_state[chave_nome_campanha])
 
@@ -510,7 +506,6 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
     else:
         col_s4.metric("🎯 Alinhamento de Saldos", "⚠️ CONFERIR AJUSTES", delta=f"Dif. Total: R$ {diferenca_visual:,.2f}", delta_color="inverse")
 
-    # ABA NOVA ADICIONADA SEPARANDO AS DUAS CONSULTAS ISOLADAS DE CARTÃO
     aba_conciliacao, aba_cartoes, aba_historico = st.tabs(["🔄 Esteira de Conciliação Diária", "📊 Visualizador Isolado de Cartões (SIPAG/Campanha)", "📋 Histórico de Fechamento"])
 
     with aba_conciliacao:
@@ -596,7 +591,73 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
                 with open(arq_cache_dias_conciliados, "w", encoding="utf-8") as f: json.dump(st.session_state[chave_dias_conciliados], f, ensure_ascii=False)
                 st.rerun()
 
-    # ➕ ACRESCENTADO: ABA ISOLADA DE CONSULTA DE CARTÕES (APENAS FILTRO E JOGAR DADOS)
+        # =========================================================================
+        # 🛠️ CENTRAL DE AJUSTES E LANÇAMENTOS (RESTAURADA AQUI POR COMPLETO!)
+        # =========================================================================
+        st.markdown("## 📝 Central de Ajustes e Lançamentos")
+        sub_aba_inserir, sub_aba_modificar = st.tabs(["➕ Inserir Novo Ajuste Manual", "📝 Modificar / Remover Lançamentos Existentes"])
+
+        with sub_aba_inserir:
+            c_ins1, c_ins2, c_ins3, c_ins4 = st.columns([2, 1, 1, 1])
+            desc_ajuste = c_ins1.text_input("Descrição do ajuste:", key="ins_desc")
+            val_ajuste = c_ins2.number_input("Valor (R$):", value=0.0, step=10.0, key="ins_val")
+            origem_ajuste = c_ins3.selectbox("Origem do ajuste:", ["Ajuste Extrato", "Ajuste Sistema"], key="ins_orig")
+            data_ajuste = c_ins4.text_input("Data do Lançamento:", value=data_selecionada if data_selecionada else datetime.date.today().strftime('%d/%m/%Y'), key="ins_dt")
+            
+            if st.button("➕ Inserir Ajuste na Linha do Tempo", use_container_width=True):
+                if desc_ajuste and val_ajuste != 0:
+                    novo_id = f"MANUAL_{int(datetime.datetime.now().timestamp())}"
+                    origem_destino = "Banco" if "Extrato" in origem_ajuste else "Sistema"
+                    st.session_state[chave_modificacoes].append({
+                        'acao': 'inserir', 'id': novo_id, 'data': data_ajuste, 'desc': desc_ajuste.upper(), 'valor': val_ajuste, 'origem': origem_destino
+                    })
+                    with open(arq_cache_modificacoes, "w", encoding="utf-8") as f: json.dump(st.session_state[chave_modificacoes], f, ensure_ascii=False)
+                    st.success("Ajuste inserido com sucesso!")
+                    st.rerun()
+
+        with sub_aba_modificar:
+            opcoes_alterar = []
+            if not df_banco_dia.empty:
+                for _, r in df_banco_dia.iterrows(): opcoes_alterar.append(f"[Extrato] {r['Descrição']} | R$ {r['Valor']} | ID: {r['id']}")
+            if not df_sistema_dia.empty:
+                for _, r in df_sistema_dia.iterrows(): opcoes_alterar.append(f"[Sistema] {r['Descrição']} | R$ {r['Valor']} | ID: {r['id']}")
+                
+            if opcoes_alterar:
+                item_selecionado = st.selectbox("Escolha qual lançamento deseja alterar/remover hoje:", opcoes_alterar)
+                id_alvo = item_selecionado.split(" | ID: ")[-1]
+                
+                # Encontra o item original para preencher os padrões
+                linha_alvo = None
+                if not df_banco_dia.empty and id_alvo in df_banco_dia['id'].values:
+                    linha_alvo = df_banco_dia[df_banco_dia['id'] == id_alvo].iloc[0]
+                elif not df_sistema_dia.empty and id_alvo in df_sistema_dia['id'].values:
+                    linha_alvo = df_sistema_dia[df_sistema_dia['id'] == id_alvo].iloc[0]
+                
+                if linha_alvo is not None:
+                    c_mod1, c_mod2, c_mod3 = st.columns([2, 1, 1])
+                    nova_desc = c_mod1.text_input("Modificar Descrição para:", value=linha_alvo['Descrição'])
+                    novo_val = c_mod2.number_input("Modificar Valor para:", value=float(linha_alvo['Valor']))
+                    nova_dt = c_mod3.text_input("Transferir para a Data:", value=linha_alvo['Data'])
+                    
+                    c_btn_m1, c_btn_m2 = st.columns(2)
+                    with c_btn_m1:
+                        if st.button("💾 Gravar Alterações / Mudar Data", use_container_width=True, type="primary"):
+                            st.session_state[chave_modificacoes] = [m for m in st.session_state[chave_modificacoes] if m['id'] != id_alvo]
+                            st.session_state[chave_modificacoes].append({
+                                'acao': 'edit', 'id': id_alvo, 'desc': nova_desc.upper(), 'valor': novo_val, 'data': nova_dt
+                            })
+                            with open(arq_cache_modificacoes, "w", encoding="utf-8") as f: json.dump(st.session_state[chave_modificacoes], f, ensure_ascii=False)
+                            st.rerun()
+                    with c_btn_m2:
+                        if st.button("🗑️ Remover permanentemente este item", use_container_width=True):
+                            st.session_state[chave_modificacoes] = [m for m in st.session_state[chave_modificacoes] if m['id'] != id_alvo]
+                            st.session_state[chave_modificacoes].append({'acao': 'excluir', 'id': id_alvo})
+                            with open(arq_cache_modificacoes, "w", encoding="utf-8") as f: json.dump(st.session_state[chave_modificacoes], f, ensure_ascii=False)
+                            st.rerun()
+            else:
+                st.caption("Nenhum lançamento elegível para edição nesta data.")
+
+    # 📊 CONSULTA DE CARTÕES ISOLADA
     with aba_cartoes:
         st.markdown("### 📊 Visualizador Dinâmico de Cartões e Recebimentos")
         st.info("Esta seção não altera o extrato ou boleto. Serve apenas para consulta e filtros rápidos dos relatórios secundários.")
