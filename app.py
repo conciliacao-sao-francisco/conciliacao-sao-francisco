@@ -51,6 +51,7 @@ st.markdown("""
     .titulo-coluna { display: flex; align-items: center; background-color: #f8f9fa; padding: 12px; border-radius: 8px; border-left: 5px solid #004B87; margin-bottom: 5px; font-weight: bold; }
     .titulo-coluna-igreja { display: flex; align-items: center; background-color: #fdfaf6; padding: 12px; border-radius: 8px; border-left: 5px solid #8B4513; margin-bottom: 5px; font-weight: bold; }
     .titulo-coluna-sipag { display: flex; align-items: center; background-color: #f4fbf7; padding: 12px; border-radius: 8px; border-left: 5px solid #28a745; margin-bottom: 5px; font-weight: bold; }
+    .caixa-soma { background-color: #f1f3f5; padding: 8px 12px; border-radius: 6px; font-size: 15px; font-weight: bold; margin-bottom: 15px; text-align: center; border: 1px solid #e9ecef; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -182,14 +183,12 @@ def processar_sistema_theos(arquivo_bytes):
             if pd.notna(dt_obj):
                 dt_f = dt_obj.strftime('%d/%m/%Y')
                 
-                # 🎯 CORREÇÃO: Captura o Saldo Real sem tratar a linha como movimentação de fluxo!
-                if "SALDO" in desc:
+                if "SALDO" in desc or "SALDO ATUAL" in desc or "SALDO DO DIA" in desc:
                     try:
                         val_saldo = ent if ent != 0 else (abs(sai) if sai != 0 else 0.0)
-                        saldos_sistema_por_dia[dt_f] = val_saldo
+                        saldos_sistema_por_dia[dt_f] = round(val_saldo, 2)
                     except: pass
                 
-                # Só joga na esteira se NÃO for linha de saldo ou subtotal
                 elif v_liq != 0 and "SUBTOTAL" not in desc:
                     dados_contrapartida.append({
                         'id': f"T_{idx_t}", 'Data': dt_f,
@@ -285,11 +284,12 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
 
     df_banco_dia = df_b_orig[df_b_orig['Data'] == data_selecionada]
     
-    # Leitura direta corrigida dos saldos declarados
-    saldo_banco_declarado = mapa_saldos_banco.get(data_selecionada, 0.0)
-    saldo_theos_declarado = mapa_saldos_theos.get(data_selecionada, 0.0)
+    saldo_banco_declarado = round(mapa_saldos_banco.get(data_selecionada, 0.0), 2)
+    saldo_theos_declarado = round(mapa_saldos_theos.get(data_selecionada, 0.0), 2)
     
     diferenca_real = saldo_banco_declarado - saldo_theos_declarado
+    if abs(diferenca_real) < 0.02:
+        diferenca_real = 0.0
 
     st.markdown("---")
     
@@ -301,28 +301,10 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
     col_s2.metric("🏦 SALDO DO DIA (Sicoob)", f"R$ {saldo_banco_declarado:,.2f}")
     col_s3.metric("⛪ LINHA DE SALDO (Theos)", f"R$ {saldo_theos_declarado:,.2f}")
     
-    if abs(diferenca_real) < 0.01:
+    if diferenca_real == 0.0:
         col_s4.metric("🎯 CONCILIAÇÃO BANCÁRIA", "✅ BATENDO", delta="Saldos 100% Iguais")
     else:
         col_s4.metric("🎯 CONCILIAÇÃO BANCÁRIA", "⚠️ DIVERGENTE", delta=f"Dif: R$ {diferenca_real:,.2f}", delta_color="inverse")
-
-    # =========================================================================
-    # 🔍 PAINEL ANALÍTICO DE DIVERGÊNCIAS
-    # =========================================================================
-    if abs(diferenca_real) >= 0.01:
-        with st.expander("🔍 **Painel Analítico de Divergências de Saldo (Clique para investigar)**", expanded=True):
-            st.error(f"⚠️ Atenção secretaria: O saldo do Sicoob e do Boletim divergem em **R$ {diferenca_real:,.2f}** no dia {data_selecionada}.")
-            col_an1, col_an2 = st.columns(2)
-            with col_an1:
-                st.markdown("**📋 Entradas e Saídas no Extrato Bancário:**")
-                st.dataframe(df_banco_dia[['Tipo', 'Descrição', 'Valor']], use_container_width=True)
-            with col_an2:
-                st.markdown("**📋 Entradas e Saídas no Boletim/Theos:**")
-                df_s_dia = df_s_orig[df_s_orig['Data'] == data_selecionada] if not df_s_orig.empty else pd.DataFrame()
-                if not df_s_dia.empty:
-                    st.dataframe(df_s_dia[['Tipo', 'Descrição', 'Valor']], use_container_width=True)
-                else:
-                    st.warning("Nenhum lançamento encontrado no sistema para este dia.")
 
     aba_conciliacao, aba_historico = st.tabs(["🔄 Esteira de Conciliação Diária", "📋 Histórico de Fechamento"])
 
@@ -357,25 +339,48 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
 
         st.markdown("---")
         
+        # =========================================================================
+        # 🧮 CÁLCULO E INICIALIZAÇÃO DE SOMAS DE SELEÇÃO (NOVA FUNCIONALIDADE)
+        # =========================================================================
+        # Garante que cada checkbox comece como selecionada (True) se não existir no session_state
+        for _, row in df_banco_tela.iterrows():
+            if f"chk_{row['id']}" not in st.session_state: st.session_state[f"chk_{row['id']}"] = True
+        if not df_sistema_tela.empty:
+            for _, row in df_sistema_tela.iterrows():
+                if f"chk_{row['id']}" not in st.session_state: st.session_state[f"chk_{row['id']}"] = True
+        if not df_sipag_tela.empty:
+            for _, row in df_sipag_tela.iterrows():
+                if f"chk_{row['id']}" not in st.session_state: st.session_state[f"chk_{row['id']}"] = True
+
+        # Processa a soma total estritamente dos que estão marcados como True
+        soma_banco_marcado = sum(row['Valor'] for _, row in df_banco_tela.iterrows() if st.session_state.get(f"chk_{row['id']}", True))
+        soma_sistema_marcado = sum(row['Valor'] for _, row in df_sistema_tela.iterrows() if st.session_state.get(f"chk_{row['id']}", True)) if not df_sistema_tela.empty else 0.0
+        soma_sipag_marcado = sum(row['Valor'] for _, row in df_sipag_tela.iterrows() if st.session_state.get(f"chk_{row['id']}", True)) if not df_sipag_tela.empty else 0.0
+
+        # Montagem dos containers e colunas em tela
         col1, col2, col3 = st.columns(3)
+        
         with col1:
             st.markdown('<div class="titulo-coluna">🏦 Extrato Sicoob</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="caixa-soma">💰 Selecionado: R$ {soma_banco_marcado:,.2f}</div>', unsafe_allow_html=True)
             for _, row in df_banco_tela.iterrows():
-                st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Descrição'][:25]}", key=f"chk_{row['id']}", value=True)
+                st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Descrição'][:25]}", key=f"chk_{row['id']}", on_change=None)
                 
         with col2:
             st.markdown('<div class="titulo-coluna-igreja">⛪ Paróquia / Boletim Theos</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="caixa-soma">💰 Selecionado: R$ {soma_sistema_marcado:,.2f}</div>', unsafe_allow_html=True)
             if not df_sistema_tela.empty:
                 for _, row in df_sistema_tela.iterrows():
-                    st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Descrição'][:25]}", key=f"chk_{row['id']}", value=True)
+                    st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Descrição'][:25]}", key=f"chk_{row['id']}", on_change=None)
             else:
                 st.warning("Sem registros no sistema para este dia.")
 
         with col3:
             st.markdown('<div class="titulo-coluna-sipag">💳 Conferência Cartão SIPAG</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="caixa-soma">💰 Selecionado: R$ {soma_sipag_marcado:,.2f}</div>', unsafe_allow_html=True)
             if not df_sipag_tela.empty:
                 for _, row in df_sipag_tela.iterrows():
-                    st.checkbox(f"R$ {row['Valor']:,.2f} | CC: {row['CentroCusto']}", key=f"chk_{row['id']}", value=True)
+                    st.checkbox(f"R$ {row['Valor']:,.2f} | CC: {row['CentroCusto']}", key=f"chk_{row['id']}", on_change=None)
             else:
                 st.warning("Sem registros com os filtros atuais.")
 
@@ -424,7 +429,7 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
                         'id': item_selecionado, 'acao': 'editar', 'desc': nova_desc.upper(), 
                         'valor': novo_val, 'data': nova_data.strftime('%d/%m/%Y')
                     })
-                    st.success("Lançamento updated!")
+                    st.success("Lançamento atualizado!")
                     st.rerun()
                 if col_b_ed2.button("🗑️ Remover permanentemente este item", use_container_width=True):
                     st.session_state[chave_modificacoes] = [m for m in st.session_state[chave_modificacoes] if m['id'] != item_selecionado]
