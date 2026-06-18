@@ -448,4 +448,162 @@ elif u_extrato and u_sistema:
                 df_banco_tela = df_banco_tela[df_banco_tela['Tipo'] == tipo_filtro]
                 df_sistema_tela = df_sistema_tela[df_sistema_tela['Tipo'] == tipo_filtro]
 
-            valores_banco_abs = df_banco_tela
+            valores_banco_abs = df_banco_tela['Valor'].abs().tolist()
+            valores_sistema_abs = df_sistema_tela['Valor'].abs().tolist() if not df_sistema_tela.empty else []
+
+            if f"marcar_todos_b_{data_selecionada}_{tipo_filtro}" not in st.session_state:
+                st.session_state[f"marcar_todos_b_{data_selecionada}_{tipo_filtro}"] = False
+            if f"marcar_todos_s_{data_selecionada}_{tipo_filtro}" not in st.session_state:
+                st.session_state[f"marcar_todos_s_{data_selecionada}_{tipo_filtro}"] = False
+
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown('<div class="titulo-coluna"><span style="font-size:24px;">🏦</span><div class="texto-header-col">Extrato Sicoob<br><span style="font-size:12px; color:#666; font-weight:normal;">' + str(len(df_banco_tela)) + ' exibidos neste tipo</span></div></div>', unsafe_allow_html=True)
+                container_calculo_banco = st.empty()
+                
+                if not df_banco_tela.empty:
+                    if st.button("⭐ Selecionar Match Automático (Banco)", key=f"btn_b_{data_selecionada}_{tipo_filtro}"):
+                        st.session_state[f"marcar_todos_b_{data_selecionada}_{tipo_filtro}"] = True
+                        st.rerun()
+
+                selecionados_banco = []
+                soma_banco_atual = 0.0
+                
+                if df_banco_tela.empty: 
+                    st.success("✅ Nenhum item pendente deste tipo no banco!")
+                
+                for _, row in df_banco_tela.iterrows():
+                    v_abs = abs(row['Valor'])
+                    tem_match = v_abs in valores_sistema_abs
+                    valor_padrao_chk = tem_match or st.session_state[f"marcar_todos_b_{data_selecionada}_{tipo_filtro}"]
+                    tag_match = " ⭐ [BATE]" if tem_match else ""
+                    label = f"{row.get('Tipo', '🔹 OUTROS')} | R$ {v_abs:,.2f} | {row.get('Detalhe_Limpo', row['Histórico'])[:35]}{tag_match}"
+                    
+                    if st.checkbox(label, key=f"b_{row['id_banco']}", value=valor_padrao_chk):
+                        selecionados_banco.append(row)
+                        soma_banco_atual += row['Valor']
+                
+                container_calculo_banco.markdown(f'<div class="caixa-calculo">📊 Selecionados: {len(selecionados_banco)} itens | Soma Atual: R$ {soma_banco_atual:,.2f}</div>', unsafe_allow_html=True)
+
+            with col2:
+                lbl_sist = "💻 Paróquia / Eclesial (Dízimos)" if "140" in conta_ativa else "💻 Paróquia / Boletim Theos"
+                st.markdown('<div class="titulo-coluna-igreja"><span style="font-size:24px;">⛪</span><div class="texto-header-col">' + lbl_sist + '<br><span style="font-size:12px; color:#666; font-weight:normal;">' + str(len(df_sistema_tela)) + ' exibidos neste tipo</span></div></div>', unsafe_allow_html=True)
+                container_calculo_sistema = st.empty()
+                
+                if not df_sistema_tela.empty:
+                    if st.button("⭐ Selecionar Match Automático (Sistema)", key=f"btn_s_{data_selecionada}_{tipo_filtro}"):
+                        st.session_state[f"marcar_todos_s_{data_selecionada}_{tipo_filtro}"] = True
+                        st.rerun()
+
+                selecionados_sistema = []
+                soma_sistema_atual = 0.0
+                
+                if df_sistema_tela.empty: 
+                    st.success("✅ Nenhum lançamento pendente deste tipo no sistema.")
+                
+                for _, row in df_sistema_tela.iterrows():
+                    v_abs = abs(row['Valor'])
+                    tem_match = v_abs in valores_banco_abs
+                    valor_padrao_chk = tem_match or st.session_state[f"marcar_todos_s_{data_selecionada}_{tipo_filtro}"]
+                    tag_match = " ⭐ [BATE]" if tem_match else ""
+                    label = f"{row.get('Tipo', '🔹 OUTROS')} | R$ {v_abs:,.2f} | {row['Descrição'][:35]}{tag_match}"
+                    
+                    if st.checkbox(label, key=f"t_{row['id_theos']}", value=valor_padrao_chk):
+                        selecionados_sistema.append(row)
+                        soma_sistema_atual += row['Valor']
+                
+                container_calculo_sistema.markdown(f'<div class="caixa-calculo-igreja">📊 Selecionados: {len(selecionados_sistema)} itens | Soma Atual: R$ {soma_sistema_atual:,.2f}</div>', unsafe_allow_html=True)
+
+            st.markdown("---")
+            if selecionados_banco or selecionados_sistema:
+                if st.button("✂️ Confirmar Baixa dos Itens Selecionados", type="primary", use_container_width=True):
+                    passo_atual = {'data': data_selecionada, 'banco_ids': [], 'theos_ids': []}
+                    
+                    if data_selecionada not in st.session_state[chave_hist_banco]: st.session_state[chave_hist_banco][data_selecionada] = []
+                    if data_selecionada not in st.session_state[chave_hist_sistema]: st.session_state[chave_hist_sistema][data_selecionada] = []
+                    
+                    for b in selecionados_banco:
+                        st.session_state[chave_banco].append(b['id_banco'])
+                        passo_atual['banco_ids'].append(b['id_banco'])
+                        st.session_state[chave_hist_banco][data_selecionada].append({
+                            'id_banco': b['id_banco'],
+                            'Descrição': b.get('Detalhe_Limpo', b['Histórico']),
+                            'Valor': b['Valor']
+                        })
+                    for t in selecionados_sistema:
+                        st.session_state[chave_sistema].append(t['id_theos'])
+                        passo_atual['theos_ids'].append(t['id_theos'])
+                        st.session_state[chave_hist_sistema][data_selecionada].append({
+                            'id_theos': t['id_theos'],
+                            'Descrição': t['Descrição'],
+                            'Valor': t['Valor']
+                        })
+                    st.session_state[f"marcar_todos_b_{data_selecionada}_{tipo_filtro}"] = False
+                    st.session_state[f"marcar_todos_s_{data_selecionada}_{tipo_filtro}"] = False
+                    st.session_state.historico_passos.append(passo_atual)
+                    st.toast("Baixa efetuada com sucesso!", icon="✅")
+                    st.rerun()
+
+        # =========================================================================
+        # 📋 HISTÓRICO REESTRUTURADO: SEPARADO EM COLUNAS LADO A LADO COM SALDO DO DIA
+        # =========================================================================
+        with aba_historico:
+            datas_com_baixas = sorted(list(set(st.session_state[chave_hist_banco].keys()).union(set(st.session_state[chave_hist_sistema].keys()))), key=lambda x: pd.to_datetime(x, dayfirst=True))
+            
+            if datas_com_baixas:
+                st.markdown("#### 📋 Relatório de Itens Fechados nesta Sessão (Visão Diária Estruturada)")
+                
+                dados_tabela_lado_a_lado = []
+                
+                for dia in datas_com_baixas:
+                    itens_banco = st.session_state[chave_hist_banco].get(dia, [])
+                    itens_sistema = st.session_state[chave_hist_sistema].get(dia, [])
+                    
+                    # Identifica qual lado gerou mais registros no dia para parear as linhas corretamente
+                    total_linhas_dia = max(len(itens_banco), len(itens_sistema))
+                    
+                    for i in range(total_linhas_dia):
+                        b_item = itens_banco[i] if i < len(itens_banco) else {'Descrição': '', 'Valor': None}
+                        s_item = itens_sistema[i] if i < len(itens_sistema) else {'Descrição': '', 'Valor': None}
+                        
+                        dados_tabela_lado_a_lado.append({
+                            'Data Movimento': dia,
+                            'Extrato Sicoob (Histórico)': b_item['Descrição'],
+                            'Extrato Sicoob (Valor)': b_item['Valor'],
+                            'Boletim/Sistema (Descrição)': s_item['Descrição'],
+                            'Boletim/Sistema (Valor)': s_item['Valor']
+                        })
+                    
+                    # RECUPERA O SALDO FINAL REAL DO DIA DAQUELE BLOCO E INSERE O SUBTOTAL DO DIA
+                    saldo_do_dia_atual = mapa_saldos.get(dia, {'Final': 0.0})['Final']
+                    dados_tabela_lado_a_lado.append({
+                        'Data Movimento': dia,
+                        'Extrato Sicoob (Histórico)': '🏁 --- SALDO FINAL DO DIA ---',
+                        'Extrato Sicoob (Valor)': saldo_do_dia_atual,
+                        'Boletim/Sistema (Descrição)': '🏁 --- FECHAMENTO CONCILIADO ---',
+                        'Boletim/Sistema (Valor)': saldo_do_dia_atual
+                    })
+                    
+                    # Linha vazia apenas para criar um espaçamento estético separando o próximo dia
+                    dados_tabela_lado_a_lado.append({k: '' for k in ['Data Movimento', 'Extrato Sicoob (Histórico)', 'Extrato Sicoob (Valor)', 'Boletim/Sistema (Descrição)', 'Boletim/Sistema (Valor)']})
+
+                df_exportar = pd.DataFrame(dados_tabela_lado_a_lado)
+                st.dataframe(df_exportar, use_container_width=True, hide_index=True)
+                
+                output = io.BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    df_exportar.to_excel(writer, sheet_name='Conciliação Diária', index=False)
+                
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.download_button(
+                    label="📥 Baixar Planilha de Fechamento Estruturada (.xlsx)", 
+                    data=output.getvalue(), 
+                    file_name=f"Fechamento_Diario_{conta_ativa.split('-')[0].strip()}.xlsx", 
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+                    use_container_width=True
+                )
+            else: 
+                st.info("Nenhuma baixa efetuada na sessão atual.")
+else:
+    st.info("💡 Para iniciar, escolha a conta no topo e envie os arquivos correspondentes nas caixas acima.")
