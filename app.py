@@ -27,7 +27,7 @@ if not st.session_state.autenticado:
         st.markdown("""
             <div style="background-color: #f8f9fa; padding: 30px; border-radius: 12px; border: 1px solid #dee2e6; box-shadow: 0px 4px 10px rgba(0,0,0,0.05);">
                 <h2 style="text-align: center; color: #003366; margin-bottom: 5px;">⛪ Paróquia São Francisco de Assis</h2>
-                <p style="text-align: center; color: #6c757d; font-size: 14px; margin-bottom: 25px;">Acesso Restrito ao Painel de Conciliation Financeira</p>
+                <p style="text-align: center; color: #6c757d; font-size: 14px; margin-bottom: 25px;">Acesso Restrito ao Painel de Conciliação Financeira</p>
             </div>
         """, unsafe_allow_html=True)
         usuario_input = st.text_input("👤 Nome de Usuário:")
@@ -182,13 +182,14 @@ def processar_sistema_theos(arquivo_bytes):
             if pd.notna(dt_obj):
                 dt_f = dt_obj.strftime('%d/%m/%Y')
                 
-                # VARREDURA PRECISAS DA LINHA DE SALDO DO BOLETIM
-                if "SALDO" in desc or "SALDO DO DIA" in desc or "SALDO DA CONTA" in desc:
+                # 🎯 CORREÇÃO: Captura o Saldo Real sem tratar a linha como movimentação de fluxo!
+                if "SALDO" in desc:
                     try:
-                        val_saldo = ent if ent != 0 else (sai if sai != 0 else 0.0)
+                        val_saldo = ent if ent != 0 else (abs(sai) if sai != 0 else 0.0)
                         saldos_sistema_por_dia[dt_f] = val_saldo
                     except: pass
                 
+                # Só joga na esteira se NÃO for linha de saldo ou subtotal
                 elif v_liq != 0 and "SUBTOTAL" not in desc:
                     dados_contrapartida.append({
                         'id': f"T_{idx_t}", 'Data': dt_f,
@@ -284,14 +285,10 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
 
     df_banco_dia = df_b_orig[df_b_orig['Data'] == data_selecionada]
     
-    # Leitura direta dos saldos declarados
+    # Leitura direta corrigida dos saldos declarados
     saldo_banco_declarado = mapa_saldos_banco.get(data_selecionada, 0.0)
     saldo_theos_declarado = mapa_saldos_theos.get(data_selecionada, 0.0)
     
-    if saldo_theos_declarado == 0.0 and not df_s_orig.empty:
-        df_ate_hoje = df_s_orig[pd.to_datetime(df_s_orig['Data'], dayfirst=True) <= pd.to_datetime(data_selecionada, dayfirst=True)]
-        saldo_theos_declarado = df_ate_hoje['Valor'].sum()
-
     diferenca_real = saldo_banco_declarado - saldo_theos_declarado
 
     st.markdown("---")
@@ -310,10 +307,10 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         col_s4.metric("🎯 CONCILIAÇÃO BANCÁRIA", "⚠️ DIVERGENTE", delta=f"Dif: R$ {diferenca_real:,.2f}", delta_color="inverse")
 
     # =========================================================================
-    # 🔍 PAINEL ANALÍTICO DE DIVERGÊNCIAS (RECURSO ADICIONADO)
+    # 🔍 PAINEL ANALÍTICO DE DIVERGÊNCIAS
     # =========================================================================
     if abs(diferenca_real) >= 0.01:
-        with st.expander("🔍 **Painel Analítico de Divergências de Saldo (Clique para expandir e investigar)**", expanded=True):
+        with st.expander("🔍 **Painel Analítico de Divergências de Saldo (Clique para investigar)**", expanded=True):
             st.error(f"⚠️ Atenção secretaria: O saldo do Sicoob e do Boletim divergem em **R$ {diferenca_real:,.2f}** no dia {data_selecionada}.")
             col_an1, col_an2 = st.columns(2)
             with col_an1:
@@ -427,7 +424,7 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
                         'id': item_selecionado, 'acao': 'editar', 'desc': nova_desc.upper(), 
                         'valor': novo_val, 'data': nova_data.strftime('%d/%m/%Y')
                     })
-                    st.success("Lançamento atualizado!")
+                    st.success("Lançamento updated!")
                     st.rerun()
                 if col_b_ed2.button("🗑️ Remover permanentemente este item", use_container_width=True):
                     st.session_state[chave_modificacoes] = [m for m in st.session_state[chave_modificacoes] if m['id'] != item_selecionado]
