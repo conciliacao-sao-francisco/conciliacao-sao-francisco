@@ -57,7 +57,7 @@ if not st.session_state.autenticado:
     st.stop()
 
 # =========================================================================
-# ESTILIZAÇÕES CUSTOMIZADAS (CSS)
+# ESTILIZAÇÕES CUSTOMIZADAS (CSS IDÊNTICO AO LAYOUT ORIGINAL)
 # =========================================================================
 st.markdown("""
     <style>
@@ -67,7 +67,6 @@ st.markdown("""
     thead th { background-color: #f0f2f6 !important; color: #31333F !important; font-weight: bold !important; }
     .titulo-coluna { display: flex; align-items: center; background-color: #f8f9fa; padding: 12px; border-radius: 8px; border-left: 5px solid #004B87; margin-bottom: 5px; }
     .titulo-coluna-igreja { display: flex; align-items: center; background-color: #fdfaf6; padding: 12px; border-radius: 8px; border-left: 5px solid #8B4513; margin-bottom: 5px; }
-    .texto-header-col { margin-left: 10px; font-size: 16px; font-weight: bold; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -90,37 +89,39 @@ conta_ativa = st.selectbox(
 )
 
 # =========================================================================
-# 💾 PERSISTÊNCIA ROBUSTA DE ARQUIVOS (ANTI-F5 DIRETO NA SESSÃO)
+# 💾 PERSISTÊNCIA INVIOLÁVEL DE ARQUIVOS E MODIFICAÇÕES (ANTI-F5)
 # =========================================================================
 chave_store_banco = f"bytes_banco_{conta_ativa}"
 chave_store_sistema = f"bytes_sistema_{conta_ativa}"
 chave_nome_banco = f"nome_banco_{conta_ativa}"
 chave_nome_sistema = f"nome_sistema_{conta_ativa}"
+chave_modificacoes = f"modificacoes_ajustes_{conta_ativa}"
 
 if chave_store_banco not in st.session_state: st.session_state[chave_store_banco] = None
 if chave_store_sistema not in st.session_state: st.session_state[chave_store_sistema] = None
+if chave_modificacoes not in st.session_state: st.session_state[chave_modificacoes] = []
 
 st.markdown("### 📥 Carregar Arquivos do Período")
 col_up1, col_up2 = st.columns(2)
 
 with col_up1:
     if "Poupança" in conta_ativa:
-        u_extrato = st.file_uploader("📂 Arraste o Extrato PDF da Poupança:", type=["pdf"], key=f"upload_banco_{conta_ativa}")
+        u_extrato = st.file_uploader("📂 Arraste o Extrato PDF da Poupança:", type=["pdf"], key=f"up_banco_{conta_ativa}")
     else:
-        u_extrato = st.file_uploader("📂 Arraste o Extrato Excel do Sicoob:", type=["xlsx", "xls"], key=f"upload_banco_{conta_ativa}")
+        u_extrato = st.file_uploader("📂 Arraste o Extrato Excel do Sicoob:", type=["xlsx", "xls"], key=f"up_banco_{conta_ativa}")
     
     if u_extrato:
         st.session_state[chave_store_banco] = u_extrato.getvalue()
         st.session_state[chave_nome_banco] = u_extrato.name
     
     if st.session_state[chave_store_banco] is not None:
-        st.success(f"🟢 Extrato na Memória: {st.session_state.get(chave_nome_banco, '')}")
+        st.success(f"🟢 Extrato na Memória: {st.session_state[chave_nome_banco]}")
 
 with col_up2:
     if "161" in conta_ativa:
-        u_sistema = st.file_uploader("📂 Arraste o Relatório do Boletim (Theos):", type=["xlsx", "xls"], key=f"upload_sist_{conta_ativa}")
+        u_sistema = st.file_uploader("📂 Arraste o Relatório do Boletim (Theos):", type=["xlsx", "xls"], key=f"up_sist_{conta_ativa}")
     elif "140" in conta_ativa:
-        u_sistema = st.file_uploader("📂 Arraste a Conferência do Dízimo (Eclesial):", type=["csv"], key=f"upload_sist_{conta_ativa}")
+        u_sistema = st.file_uploader("📂 Arraste a Conferência do Dízimo (Eclesial):", type=["csv"], key=f"up_sist_{conta_ativa}")
     else:
         u_sistema = None
 
@@ -129,7 +130,7 @@ with col_up2:
         st.session_state[chave_nome_sistema] = u_sistema.name
         
     if "Poupança" not in conta_ativa and st.session_state[chave_store_sistema] is not None:
-        st.success(f"🟢 Boletim/Sistema na Memória: {st.session_state.get(chave_nome_sistema, '')}")
+        st.success(f"🟢 Boletim/Sistema na Memória: {st.session_state[chave_nome_sistema]}")
 
 if st.session_state[chave_store_banco] is not None or st.session_state[chave_store_sistema] is not None:
     if st.button("🗑️ Trocar / Limpar Arquivos da Tela", use_container_width=True):
@@ -137,12 +138,11 @@ if st.session_state[chave_store_banco] is not None or st.session_state[chave_sto
         st.session_state[chave_store_sistema] = None
         st.rerun()
 
-# Recuperando variáveis locais estáveis
 bytes_banco_prontos = st.session_state[chave_store_banco]
 bytes_sistema_prontos = st.session_state[chave_store_sistema]
 
 # =========================================================================
-# TRATAMENTO DE TRADUÇÃO E PARSERS DOS ARQUIVOS
+# PARSERS UNIVERSAIS DE DINHEIRO E TEXTO
 # =========================================================================
 def converter_valor_extrato(val_str):
     if pd.isna(val_str): return 0.0
@@ -162,10 +162,11 @@ def extrair_detalhe_limpo(historico, detalhes):
     hist_u = str(historico).upper().strip()
     det_u = str(detalhes).upper().strip()
     tipo = "🔹 OUTROS"
-    if "PIX RECEBIDO" in hist_u or "RECEBIDO DE OUTRA IF" in hist_u: tipo = "🟢 PIX RECEIVED"
-    elif "PIX ENVIADO" in hist_u or "PIX TRANSFERIDO" in hist_u: tipo = "🔴 PIX SENT"
+    if "PIX RECEBIDO" in hist_u or "RECEBIDO DE OUTRA IF" in hist_u: tipo = "🟢 PIX RECEBIDO"
+    elif "PIX ENVIADO" in hist_u or "PIX TRANSFERIDO" in hist_u: tipo = "🔴 PIX ENVIADO"
     elif "PAGTO TITULO" in hist_u or "PAGAMENTO" in hist_u: tipo = "🔴 PAGTO TITULO"
     elif "TARIFA" in hist_u or "TAR EXTRATO" in hist_u: tipo = "🔴 TAR TARIFA"
+    elif "SIPAG" in hist_u or "COMPRAS" in hist_u: tipo = "💳 SIPAG LOTE"
     
     limpeza_regex = [r"RECEBIDO DE OUTRA IF", r"PIX TRANSFERIDO", r"PIX RECEBIDO", r"FAVORECIDO:", r"PAGADOR:", r"REMETENTE:"]
     name_isolado = det_u
@@ -219,106 +220,9 @@ def carregar_dados_da_sessao(modo_conta, bytes_banco, bytes_sistema):
     
     for idx, item in enumerate(dados_b):
         tipo_limpo, detalhe_limpo = extrair_detalhe_limpo(item['Histórico'], item['Detalhes'])
-        item['id_banco'] = f"B_{idx}"
-        item['Tipo'] = tipo_limpo
-        item['Detalhe_Limpo'] = detalhe_limpo
-        dados_banco_finais.append(item)
+        dados_banco_finais.append({
+            'id': f"B_{idx}", 'Data': item['Data'], 'Tipo': tipo_limpo,
+            'Descrição': detalhe_limpo, 'Valor': item['Valor'], 'Origem': 'Banco'
+        })
 
-    dados_contrapartida = []
-    if bytes_sistema:
-        if "161" in modo_conta:
-            df_t_bruto = pd.read_excel(io.BytesIO(bytes_sistema), skiprows=7).dropna(how='all')
-            for idx_t, row in df_t_bruto.iterrows():
-                if len(row) < 23: continue
-                dt_val = row.iloc[0]
-                if pd.notna(dt_val) and ('-' in str(dt_val) or '/' in str(dt_val)):
-                    desc = str(row.iloc[9]).strip()
-                    ent = float(row.iloc[16]) if pd.notna(row.iloc[16]) else 0.0
-                    sai = float(row.iloc[22]) if pd.notna(row.iloc[22]) else 0.0
-                    v_liq = ent - sai
-                    if v_liq != 0 and "SUBTOTAL" not in desc.upper():
-                        dt_obj = pd.to_datetime(str(dt_val)[:10], errors='coerce')
-                        if pd.notna(dt_obj):
-                            dados_contrapartida.append({
-                                'id_theos': f"T_{idx_t}", 'Data': dt_obj.strftime('%d/%m/%Y'),
-                                'Tipo': "🟢 ENTRADA" if v_liq > 0 else "🔴 SAÍDA", 'Descrição': desc, 'Valor': round(v_liq, 2)
-                            })
-    
-    mapa_saldos = {dia: {'Anterior': s_ant if i==0 else list(s_finais.values())[i-1], 'Final': v} for i, (dia, v) in enumerate(s_finais.items())}
-    return pd.DataFrame(dados_banco_finais), pd.DataFrame(dados_contrapartida), mapa_saldos
-
-# =========================================================================
-# EXECUÇÃO DO OPERACIONAL DE CONCILIAÇÃO
-# =========================================================================
-if bytes_banco_prontos and ("Poupança" in conta_ativa or bytes_sistema_prontos):
-    
-    df_banco_orig, df_sistema_orig, mapa_saldos = carregar_dados_da_sessao(conta_ativa, bytes_banco_prontos, bytes_sistema_prontos)
-    
-    todas_datas = sorted(list(set(df_banco_orig['Data'].unique()).union(set(df_sistema_orig['Data'].unique() if df_sistema_orig is not None else []))), key=lambda x: pd.to_datetime(x, dayfirst=True))
-
-    if 'indice_data' not in st.session_state: st.session_state.indice_data = 0
-    
-    with st.sidebar:
-        st.markdown(f"### 🎛️ Painel - {conta_ativa.split('-')[0]}")
-        data_selecionada = st.selectbox(" Selecione o Dia:", todas_datas, index=min(st.session_state.indice_data, len(todas_datas)-1))
-        st.session_state.indice_data = todas_datas.index(data_selecionada)
-
-    info_saldo = mapa_saldos.get(data_selecionada, {'Anterior': 0.0, 'Final': 0.0})
-    df_banco_dia = df_banco_orig[df_banco_orig['Data'] == data_selecionada]
-    fluxo_dia = df_banco_dia['Valor'].sum()
-    
-    st.markdown("---")
-    col_s1, col_s2, col_s3 = st.columns(3)
-    col_s1.metric(" Saldo Anterior Real", f"R$ {info_saldo['Anterior']:,.2f}")
-    col_s2.metric("🔄 Movimentação Líquida", f"R$ {fluxo_dia:,.2f}")
-    col_s3.metric("🏦 Saldo Final Sicoob", f"R$ {info_saldo['Final']:,.2f}")
-
-    aba_conciliacao, aba_historico = st.tabs(["🔄 Esteira de Conciliação Diária", "📋 Histórico de Fechamento"])
-
-    with aba_conciliacao:
-        st.markdown(f"#### Lançamentos pendentes em: <span style='color:green; font-weight:bold;'>{data_selecionada}</span>", unsafe_allow_html=True)
-        
-        df_banco_tela = df_banco_dia
-        df_sistema_tela = df_sistema_orig[df_sistema_orig['Data'] == data_selecionada] if df_sistema_orig is not None else pd.DataFrame()
-
-        # -----------------------------------------------------------------
-        # ⭐ BOTÕES DE COMANDO EM LOTE (MATCH AUTOMÁTICO) RETORNADOS!
-        # -----------------------------------------------------------------
-        col_btn1, col_btn2 = st.columns(2)
-        with col_btn1:
-            if st.button("⭐ Selecionar Match Automático (Banco)", type="secondary", use_container_width=True):
-                st.toast("⚡ Analisando correspondências no banco para o lote automático...")
-        with col_btn2:
-            if st.button("⭐ Selecionar Match Automático (Sistema)", type="secondary", use_container_width=True):
-                st.toast("⚡ Cruzando valores idênticos do Boletim automaticamente...")
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown('<div class="titulo-coluna">🏦 Extrato Sicoob</div>', unsafe_allow_html=True)
-            for _, row in df_banco_tela.iterrows():
-                st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Detalhe_Limpo'][:40]}", key=f"b_{row['id_banco']}")
-        with col2:
-            st.markdown('<div class="titulo-coluna-igreja">⛪ Paróquia / Boletim Theos</div>', unsafe_allow_html=True)
-            for _, row in df_sistema_tela.iterrows():
-                st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Descrição'][:40]}", key=f"t_{row['id_theos']}")
-
-        st.markdown("---")
-        # -----------------------------------------------------------------
-        # ⭐ SEÇÃO DE EDIÇÃO E AJUSTE MANUAL DE LANÇAMENTO RETORNADA!
-        # -----------------------------------------------------------------
-        st.markdown("#### ✏️ Ajuste / Edição Manual de Lançamento")
-        with st.expander("Clique aqui para ajustar ou forçar uma entrada/saída manualmente"):
-            col_ed1, col_ed2, col_ed3 = st.columns([2, 1, 1])
-            desc_ajuste = col_ed1.text_input("Descrição do ajuste:")
-            val_ajuste = col_ed2.number_input("Valor (R$):", step=0.01)
-            tipo_ajuste = col_ed3.selectbox("Origem do ajuste:", ["Ajuste Banco", "Ajuste Sistema"])
-            if st.button("➕ Inserir Ajuste na Esteira", use_container_width=True):
-                st.success("Ajuste adicionado provisoriamente para o fechamento!")
-
-        if st.button(" Закрыть / Confirmar Baixa dos Itens Selecionados", type="primary", use_container_width=True):
-            st.success(f"Baixa efetuada com sucesso para o dia {data_selecionada}!")
-
-else:
-    st.info("💡 Insira os arquivos correspondentes para liberar as telas de conciliação.")
+    dados_contrapartida
