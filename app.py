@@ -27,7 +27,7 @@ if not st.session_state.autenticado:
         st.markdown("""
             <div style="background-color: #f8f9fa; padding: 30px; border-radius: 12px; border: 1px solid #dee2e6; box-shadow: 0px 4px 10px rgba(0,0,0,0.05);">
                 <h2 style="text-align: center; color: #003366; margin-bottom: 5px;">⛪ Paróquia São Francisco de Assis</h2>
-                <p style="text-align: center; color: #6c757d; font-size: 14px; margin-bottom: 25px;">Acesso Restrito ao Painel de Conciliation Financeira</p>
+                <p style="text-align: center; color: #6c757d; font-size: 14px; margin-bottom: 25px;">Acesso Restrito ao Painel de Conciliação Financeira</p>
             </div>
         """, unsafe_allow_html=True)
         usuario_input = st.text_input("👤 Nome de Usuário:")
@@ -153,7 +153,7 @@ def processar_extrato_sicoob(arquivo_bytes):
         if "SALDO" in historico: continue
         
         if pd.notna(data_orig) and '/' in str(data_orig):
-            if linha_mestre: dados_banco_brutos.append(linha_mestre)
+            if linenhamestre := linha_mestre: dados_banco_brutos.append(linenhamestre)
             linha_mestre = {
                 'Data': pd.to_datetime(str(data_orig).strip(), dayfirst=True).strftime('%d/%m/%Y'),
                 'Histórico': historico, 'Valor': converter_valor_extrato(row.iloc[3]), 'Detalhes': ''
@@ -162,7 +162,7 @@ def processar_extrato_sicoob(arquivo_bytes):
             if linha_mestre:
                 linha_mestre['Detalhes'] += " " + " ".join([str(v).strip() for v in row.values if pd.notna(v)])
                 
-    if linha_mestre: dados_banco_brutos.append(linha_mestre)
+    if linenhamestre := linha_mestre: dados_banco_brutos.append(linenhamestre)
     return dados_banco_brutos, saldos_finais_por_dia
 
 def processar_sistema_theos(arquivo_bytes):
@@ -342,7 +342,7 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         # =========================================================================
         # 🧮 ESTRUTURA REATIVA PARA CALCULAR AS SOMAS ANTES DAS CHECKBOXES
         # =========================================================================
-        # CORREÇÃO: Garante o estado inicial como False (caixinhas desmarcadas)
+        # Garante o estado inicial como False (caixinhas começam estritamente desmarcadas)
         for _, row in df_banco_tela.iterrows():
             if f"chk_{row['id']}" not in st.session_state: st.session_state[f"chk_{row['id']}"] = False
         if not df_sistema_tela.empty:
@@ -352,14 +352,10 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
             for _, row in df_sipag_tela.iterrows():
                 if f"chk_{row['id']}" not in st.session_state: st.session_state[f"chk_{row['id']}"] = False
 
-        # Processamento e cálculo reativo imediato das somas apenas dos itens que possuem estado = True
+        # Processamento e cálculo reativo imediato das somas apenas dos itens marcados
         soma_banco_marcado = sum(row['Valor'] for _, row in df_banco_tela.iterrows() if st.session_state.get(f"chk_{row['id']}", False))
         soma_sistema_marcado = sum(row['Valor'] for _, row in df_sistema_tela.iterrows() if st.session_state.get(f"chk_{row['id']}", False)) if not df_sistema_tela.empty else 0.0
         soma_sipag_marcado = sum(row['Valor'] for _, row in df_sipag_tela.iterrows() if st.session_state.get(f"chk_{row['id']}", False)) if not df_sipag_tela.empty else 0.0
-
-        # Callback de atualização forçada instantânea
-        def atualizar_clique():
-            pass  # O Streamlit já processa o rerun natural do on_change e recalcula a soma
 
         # Montagem das 3 colunas lado a lado
         col1, col2, col3 = st.columns(3)
@@ -368,14 +364,14 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
             st.markdown('<div class="titulo-coluna">🏦 Extrato Sicoob</div>', unsafe_allow_html=True)
             st.markdown(f'<div class="caixa-soma">💰 Selecionado: R$ {soma_banco_marcado:,.2f}</div>', unsafe_allow_html=True)
             for _, row in df_banco_tela.iterrows():
-                st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Descrição'][:25]}", key=f"chk_{row['id']}", on_change=atualizar_clique)
+                st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Descrição'][:25]}", key=f"chk_{row['id']}")
                 
         with col2:
             st.markdown('<div class="titulo-coluna-igreja">⛪ Paróquia / Boletim Theos</div>', unsafe_allow_html=True)
             st.markdown(f'<div class="caixa-soma">💰 Selecionado: R$ {soma_sistema_marcado:,.2f}</div>', unsafe_allow_html=True)
             if not df_sistema_tela.empty:
                 for _, row in df_sistema_tela.iterrows():
-                    st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Descrição'][:25]}", key=f"chk_{row['id']}", on_change=atualizar_clique)
+                    st.checkbox(f"{row['Tipo']} | R$ {abs(row['Valor']):,.2f} | {row['Descrição'][:25]}", key=f"chk_{row['id']}")
             else:
                 st.warning("Sem registros no sistema para este dia.")
 
@@ -384,7 +380,7 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
             st.markdown(f'<div class="caixa-soma">💰 Selecionado: R$ {soma_sipag_marcado:,.2f}</div>', unsafe_allow_html=True)
             if not df_sipag_tela.empty:
                 for _, row in df_sipag_tela.iterrows():
-                    st.checkbox(f"R$ {row['Valor']:,.2f} | CC: {row['CentroCusto']}", key=f"chk_{row['id']}", on_change=atualizar_clique)
+                    st.checkbox(f"R$ {row['Valor']:,.2f} | CC: {row['CentroCusto']}", key=f"chk_{row['id']}")
             else:
                 st.warning("Sem registros com os filtros atuais.")
 
@@ -433,7 +429,7 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
                         'id': item_selecionado, 'acao': 'editar', 'desc': nova_desc.upper(), 
                         'valor': novo_val, 'data': nova_data.strftime('%d/%m/%Y')
                     })
-                    st.success("Lançamento atualizado!")
+                    st.success("Lançamento updated!")
                     st.rerun()
                 if col_b_ed2.button("🗑️ Remover permanentemente este item", use_container_width=True):
                     st.session_state[chave_modificacoes] = [m for m in st.session_state[chave_modificacoes] if m['id'] != item_selecionado]
