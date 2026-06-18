@@ -404,4 +404,21 @@ if bytes_banco_prontos and ("Poupança" in conta_ativa or bytes_sistema_prontos)
                     st.session_state[chave_modificacoes] = [m for m in st.session_state[chave_modificacoes] if m['id'] != item_selecionado]
                     st.session_state[chave_modificacoes].append({
                         'id': item_selecionado, 'acao': 'editar', 'desc': nova_desc.upper(),
-                        'valor': novo_val, 'data': nova
+                        'valor': novo_val, 'data': nova_data.strftime('%d/%m/%Y')
+                    })
+                    st.success("Lançamento modificado e reposicionado com sucesso!")
+                    st.rerun()
+                    
+                if col_b_ed2.button("🗑️ Excluir este lançamento permanentemente", use_container_width=True):
+                    st.session_state[chave_modificacoes] = [m for m in st.session_state[chave_modificacoes] if m['id'] != item_selecionado]
+                    st.session_state[chave_modificacoes].append({'id': item_selecionado, 'acao': 'excluir'})
+                    st.warning("Lançamento removido do fluxo.")
+                    st.rerun()
+            else:
+                st.info("Nenhum lançamento listado neste dia para modificação.")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("📌 Confirmar Baixa dos Itens Selecionados", type="primary", use_container_width=True):
+            st.success(f"Baixa efetuada com sucesso para o dia {data_selecionada}!")
+else:
+    st.info("💡 Insira os arquivos correspondentes para liberar as telas de conciliação.")
