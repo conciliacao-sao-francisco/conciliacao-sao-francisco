@@ -61,23 +61,21 @@ conta_ativa = st.selectbox(
     ["Conta 161 - Geral (Theos)", "Conta 140 - Dízimo (Eclesial)", "Contas Poupança - PIX Oferta (Centros de Custo)"]
 )
 
-# Chaves de Estado
+# Chaves de Estado Fixas na Sessão (Persistem ao F5)
 chave_store_banco = f"bytes_banco_{conta_ativa}"
 chave_store_sistema = f"bytes_sistema_{conta_ativa}"
 chave_store_sipag = f"bytes_sipag_{conta_ativa}"
 chave_nome_banco = f"nome_banco_{conta_ativa}"
 chave_nome_sistema = f"nome_sistema_{conta_ativa}"
 chave_nome_sipag = f"nome_sipag_{conta_ativa}"
-chave_modificacoes = f"modificacoes_ajustes_{conta_ativa}"
 chave_dias_conciliados = f"dias_conciliados_{conta_ativa}"
 
 if chave_store_banco not in st.session_state: st.session_state[chave_store_banco] = None
 if chave_store_sistema not in st.session_state: st.session_state[chave_store_sistema] = None
 if chave_store_sipag not in st.session_state: st.session_state[chave_store_sipag] = None
-if chave_modificacoes not in st.session_state: st.session_state[chave_modificacoes] = []
 if chave_dias_conciliados not in st.session_state: st.session_state[chave_dias_conciliados] = []
 
-# Uploads
+# Uploads com captura imediata anti-F5
 st.markdown("### 📥 Carregar Arquivos do Período")
 col_up1, col_up2, col_up3 = st.columns(3)
 
@@ -86,25 +84,30 @@ with col_up1:
     if u_extrato:
         st.session_state[chave_store_banco] = u_extrato.getvalue()
         st.session_state[chave_nome_banco] = u_extrato.name
+    if st.session_state[chave_store_banco]:
+        st.success(f"🟢 Memória Ativa: {st.session_state.get(chave_nome_banco, 'Extrato Guardado')}")
 
 with col_up2:
     u_sistema = st.file_uploader("📂 Arraste o Relatório do Boletim / Sistema:", type=["xlsx", "xls", "csv"], key=f"up_sist_{conta_ativa}")
     if u_sistema:
         st.session_state[chave_store_sistema] = u_sistema.getvalue()
         st.session_state[chave_nome_sistema] = u_sistema.name
+    if st.session_state[chave_store_sistema]:
+        st.success(f"🟢 Memória Ativa: {st.session_state.get(chave_nome_sistema, 'Sistema Guardado')}")
 
 with col_up3:
     u_sipag = st.file_uploader("📂 Planilha do Cartão SIPAG (CSV):", type=["csv", "xlsx"], key=f"up_sipag_{conta_ativa}")
     if u_sipag:
         st.session_state[chave_store_sipag] = u_sipag.getvalue()
         st.session_state[chave_nome_sipag] = u_sipag.name
+    if st.session_state[chave_store_sipag]:
+        st.success(f"🟢 Memória Ativa: {st.session_state.get(chave_nome_sipag, 'SIPAG Guardada')}")
 
 if st.session_state[chave_store_banco] or st.session_state[chave_store_sistema] or st.session_state[chave_store_sipag]:
     if st.button("🗑️ Trocar / Limpar Arquivos da Tela", use_container_width=True):
         st.session_state[chave_store_banco] = None
         st.session_state[chave_store_sistema] = None
         st.session_state[chave_store_sipag] = None
-        st.session_state[chave_modificacoes] = []
         st.session_state[chave_dias_conciliados] = []
         if 'indice_data' in st.session_state: del st.session_state.indice_data
         st.rerun()
@@ -125,18 +128,6 @@ def converter_valor_extrato(val_str):
 
 def processar_extrato_sicoob(arquivo_bytes):
     df_s_bruto = pd.read_excel(io.BytesIO(arquivo_bytes), skiprows=1)
-    saldo_anterior_inicial = 0.0
-    saldos_finais_por_dia = {}
-    
-    for _, row in df_s_bruto.iterrows():
-        if len(row) < 4: continue
-        historico = str(row.iloc[2]).strip().upper()
-        data_linha = row.iloc[0]
-        if "SALDO ANTERIOR" in historico: saldo_anterior_inicial = abs(converter_valor_extrato(row.iloc[3]))
-        if "SALDO DO DIA" in historico and pd.notna(data_linha):
-            dt_formatada = pd.to_datetime(str(data_linha).strip(), dayfirst=True).strftime('%d/%m/%Y')
-            saldos_finais_por_dia[dt_formatada] = abs(converter_valor_extrato(row.iloc[3]))
-
     dados_banco_brutos = []
     linha_mestre = None
     for _, row in df_s_bruto.iterrows():
@@ -156,14 +147,14 @@ def processar_extrato_sicoob(arquivo_bytes):
                 linha_mestre['Detalhes'] += " " + " ".join([str(v).strip() for v in row.values if pd.notna(v)])
                 
     if linha_mestre: dados_banco_brutos.append(linha_mestre)
-    return dados_banco_brutos, saldo_anterior_inicial, saldos_finais_por_dia
+    return dados_banco_brutos
 
 def processar_sipag_csv(arquivo_bytes):
     try:
         df_sipag = pd.read_csv(io.BytesIO(arquivo_bytes), sep=';', skiprows=2)
         dados_finais = []
         for idx, row in df_sipag.iterrows():
-            if len(row) < 13 or pd.isna(row.iloc[1]): continue
+            if len(row) < 14 or pd.isna(row.iloc[1]): continue
             dt_str = str(row.iloc[1]).split()[0]
             try:
                 dt_f = pd.to_datetime(dt_str, dayfirst=True).strftime('%d/%m/%Y')
@@ -171,7 +162,6 @@ def processar_sipag_csv(arquivo_bytes):
                 forma = str(row.iloc[4]).strip()
                 v_bruto = converter_valor_extrato(row.iloc[9])
                 
-                # Captura a última coluna preenchida como Centro de Custo da SIPAG
                 cc_valores = [str(val).strip() for val in row.values if pd.notna(val)]
                 centro_custo = cc_valores[-1] if len(cc_valores) > 0 else "NÃO INFORMADO"
                 
@@ -183,9 +173,9 @@ def processar_sipag_csv(arquivo_bytes):
         return pd.DataFrame(dados_finais)
     except: return pd.DataFrame()
 
-# Processamento Principal
+# Processamento Principal usando a memória segura
 if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]:
-    dados_b, s_ant, s_finais = processar_extrato_sicoob(st.session_state[chave_store_banco])
+    dados_b = processar_extrato_sicoob(st.session_state[chave_store_banco])
     
     dados_banco_finais = []
     for idx, item in enumerate(dados_b):
@@ -225,7 +215,7 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
     if st.session_state[chave_store_sipag]:
         df_sipag_orig = processar_sipag_csv(st.session_state[chave_store_sipag])
 
-    # Monta a lista de datas pendentes (Filtrando as que já foram baixadas)
+    # Filtragem inteligente de datas pendentes
     todas_datas_totais = sorted(list(set(df_b_orig['Data'].unique()).union(set(df_s_orig['Data'].unique()))), key=lambda x: pd.to_datetime(x, dayfirst=True))
     datas_pendentes = [d for d in todas_datas_totais if d not in st.session_state[chave_dias_conciliados]]
 
@@ -245,21 +235,19 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         data_selecionada = st.selectbox("📆 Dias Pendentes de Baixa:", datas_pendentes, index=st.session_state.indice_data)
         st.session_state.indice_data = datas_pendentes.index(data_selecionada)
 
-    info_saldo = { 'Anterior': 0.0, 'Final': 0.0 }
     df_banco_dia = df_b_orig[df_b_orig['Data'] == data_selecionada]
     
     st.markdown("---")
     col_s1, col_s2, col_s3 = st.columns(3)
-    col_s1.metric("💰 Saldo do Dia (Extrato)", f"R$ {df_banco_dia['Valor'].sum():,.2f}")
+    col_s1.metric("💰 Saldo Movimentado (Extrato)", f"R$ {df_banco_dia['Valor'].sum():,.2f}")
     col_s2.metric("⛪ Lançamentos Sistema", f"R$ {df_s_orig[df_s_orig['Data'] == data_selecionada]['Valor'].sum():,.2f}")
-    col_s3.metric("📅 Dia Corrente na Esteira", data_selecionada)
+    col_s3.metric("📅 Dia em Execução", data_selecionada)
 
     aba_conciliacao, aba_historico = st.tabs(["🔄 Esteira de Conciliação Diária", "📋 Histórico de Fechamento"])
 
     with aba_conciliacao:
         st.markdown(f"### Lançamentos Ativos do Dia: <span style='color:#004B87;'>{data_selecionada}</span>", unsafe_allow_html=True)
         
-        # Filtros Normais
         c_flt1, c_flt2 = st.columns(2)
         filtro_banco = c_flt1.selectbox("🎯 Filtrar Extrato Sicoob:", ["Todos", "🟢 PIX RECEBIDO", "🔴 PIX ENVIADO", "🔴 PAGTO TITULO", "💳 SIPAG LOTE"])
         filtro_sist = c_flt2.selectbox("🎯 Filtrar Sistema:", ["Todos", "ENTRADA", "SAÍDA"])
@@ -270,40 +258,33 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         
         df_sipag_tela = df_sipag_orig[df_sipag_orig['Data'] == data_selecionada] if not df_sipag_orig.empty else pd.DataFrame()
         
-        # =========================================================================
-        # 🔥 NOVA REGRA: MULTI-FILTRO POR CENTRO DE CUSTO (MÚLTIPLA SELEÇÃO)
-        # =========================================================================
+        # Multi-Filtro Avançado SIPAG
         if not df_sipag_tela.empty:
             lista_ccs = sorted(df_sipag_tela['CentroCusto'].unique().tolist())
-            st.markdown("#### 💳 Filtros da SIPAG")
+            st.markdown("#### 💳 Filtros por Múltiplos Centros de Custo (SIPAG)")
             cc_selecionados = st.multiselect(
-                "🎯 Selecione um ou mais Centros de Custo para ver na coluna SIPAG:",
-                options=lista_ccs, default=lista_ccs,
-                help="Você pode remover ou adicionar múltiplos itens para filtrar juntos na coluna da direita."
+                "Escolha as bandeiras/centros para cruzar em tela:",
+                options=lista_ccs, default=lista_ccs
             )
             df_sipag_tela = df_sipag_tela[df_sipag_tela['CentroCusto'].isin(cc_selecionados)]
 
-        # =========================================================================
-        # ⚡ BOTÃO DE BAIXA CORRETISSIMA: APENAS CONFIRMA, COLOCA NO HISTÓRICO E METE MARCHA
-        # =========================================================================
+        # Lógica Avançar e Sumir da tela imediatamente
         st.markdown("<br>", unsafe_allow_html=True)
         col_auto1, col_auto2 = st.columns([2, 1])
         
         with col_auto1:
-            st.info(f"Ao clicar ao lado, o dia **{data_selecionada}** será considerado OK, sairá desta visualização e o painel trará o próximo dia pendente.")
+            st.info(f"Clicando ao lado, o dia **{data_selecionada}** será arquivado e sumirá imediatamente desta listagem.")
                 
         with col_auto2:
             if st.button("⚡ Confirmar Baixa Direta e Ir p/ Próximo Dia", type="primary", use_container_width=True):
-                # Guarda o dia corrente na lista definitiva de concluídos
                 st.session_state[chave_dias_conciliados].append(data_selecionada)
-                st.toast(f"✅ Dia {data_selecionada} liquidado com sucesso!")
+                st.toast(f"✅ Dia {data_selecionada} baixado!")
                 st.rerun()
 
         st.markdown("---")
         
-        # --- COLUNAS VISUAIS ---
+        # Exibição das Colunas
         col1, col2, col3 = st.columns(3)
-        
         with col1:
             st.markdown('<div class="titulo-coluna">🏦 Extrato Sicoob</div>', unsafe_allow_html=True)
             for _, row in df_banco_tela.iterrows():
@@ -320,18 +301,13 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
                 for _, row in df_sipag_tela.iterrows():
                     st.checkbox(f"R$ {row['Valor']:,.2f} | CC: {row['CentroCusto']}", key=f"chk_{row['id']}", value=True)
             else:
-                st.warning("Nenhum lote SIPAG localizado para os filtros selecionados.")
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("📌 Salvar Seleção de Itens Manuais", use_container_width=True):
-            st.session_state[chave_dias_conciliados].append(data_selecionada)
-            st.rerun()
+                st.warning("Sem registros com os filtros atuais.")
 
     with aba_historico:
-        st.markdown("### 📋 Histórico de Fechamento do Arquivo")
+        st.markdown("### 📋 Histórico de Fechamento do Período")
         if st.session_state[chave_dias_conciliados]:
             for d in st.session_state[chave_dias_conciliados]:
-                st.success(f"📆 Dia {d} -> **BAIXADO / OK**")
+                st.success(f"📆 Dia {d} -> **BAIXADO NO SISTEMA**")
         else:
             st.info("Nenhum dia fechado ainda.")
 else:
