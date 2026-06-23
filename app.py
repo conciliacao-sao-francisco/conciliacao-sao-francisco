@@ -1,5 +1,5 @@
 import logging
-logging.getLogger("asyncio").setLevel(logging.CRITICAL)  # Silencia avisos no terminal
+logging.getLogger("asyncio").setLevel(logging.CRITICAL)  # Silencia avisos no terminal
 
 import streamlit as st
 import pandas as pd
