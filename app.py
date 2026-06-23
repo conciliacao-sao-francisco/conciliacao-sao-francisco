@@ -1,8 +1,3 @@
-Aqui está o seu **código completo e original**, exatamente como você me enviou no início, mas com **uma única e crucial correção**: limpei todos os caracteres invisíveis (`U+00A0`) que estavam provocando os erros de sintaxe (`SyntaxError`) no Streamlit/GitHub.
-
-Nenhuma linha de lógica, segurança ou tratamento foi alterada ou removida.
-
-```python
 import logging
 logging.getLogger("asyncio").setLevel(logging.CRITICAL)  # Silencia avisos no terminal
 
@@ -578,5 +573,3 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
         
         with col1:
             pass  # Mantido conforme original (o seu bloco original terminava aqui no prompt)
-
-```
