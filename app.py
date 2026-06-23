@@ -80,10 +80,14 @@ chave_store_banco = f"bytes_banco_{conta_ativa}"
 chave_store_sistema = f"bytes_sistema_{conta_ativa}"
 chave_store_sipag = f"bytes_sipag_{conta_ativa}"
 chave_store_campanha = f"bytes_campanha_{conta_ativa}"
+chave_store_dizimo = f"bytes_dizimo_{conta_ativa}"
+
 chave_nome_banco = f"nome_banco_{conta_ativa}"
 chave_nome_sistema = f"nome_sistema_{conta_ativa}"
 chave_nome_sipag = f"nome_sipag_{conta_ativa}"
 chave_nome_campanha = f"nome_campanha_{conta_ativa}"
+chave_nome_dizimo = f"nome_dizimo_{conta_ativa}"
+
 chave_modificacoes = f"modificacoes_ajustes_{conta_ativa}"
 chave_dias_conciliados = f"dias_conciliados_{conta_ativa}"
 chave_historico_ocultacoes = f"historico_ocultacoes_{conta_ativa}"
@@ -93,6 +97,7 @@ if chave_store_banco not in st.session_state: st.session_state[chave_store_banco
 if chave_store_sistema not in st.session_state: st.session_state[chave_store_sistema] = None
 if chave_store_sipag not in st.session_state: st.session_state[chave_store_sipag] = None
 if chave_store_campanha not in st.session_state: st.session_state[chave_store_campanha] = None
+if chave_store_dizimo not in st.session_state: st.session_state[chave_store_dizimo] = None
 if chave_modificacoes not in st.session_state: st.session_state[chave_modificacoes] = []
 if chave_dias_conciliados not in st.session_state: st.session_state[chave_dias_conciliados] = []
 if chave_historico_ocultacoes not in st.session_state: st.session_state[chave_historico_ocultacoes] = []
@@ -101,10 +106,14 @@ arq_cache_banco = os.path.join(CACHE_DIR, f"banco_{conta_ativa}.cache")
 arq_cache_sistema = os.path.join(CACHE_DIR, f"sistema_{conta_ativa}.cache")
 arq_cache_sipag = os.path.join(CACHE_DIR, f"sipag_{conta_ativa}.cache")
 arq_cache_campanha = os.path.join(CACHE_DIR, f"campanha_{conta_ativa}.cache")
+arq_cache_dizimo = os.path.join(CACHE_DIR, f"dizimo_{conta_ativa}.cache")
+
 arq_cache_nome_banco = os.path.join(CACHE_DIR, f"nome_banco_{conta_ativa}.txt")
 arq_cache_nome_sistema = os.path.join(CACHE_DIR, f"nome_sistema_{conta_ativa}.txt")
 arq_cache_nome_sipag = os.path.join(CACHE_DIR, f"nome_sipag_{conta_ativa}.txt")
 arq_cache_nome_campanha = os.path.join(CACHE_DIR, f"nome_campanha_{conta_ativa}.txt")
+arq_cache_nome_dizimo = os.path.join(CACHE_DIR, f"nome_dizimo_{conta_ativa}.txt")
+
 arq_cache_modificacoes = os.path.join(CACHE_DIR, f"ajustes_{conta_ativa}.json")
 arq_cache_dias_conciliados = os.path.join(CACHE_DIR, f"dias_ok_{conta_ativa}.json")
 arq_cache_historico_ocultacoes = os.path.join(CACHE_DIR, f"ocultados_{conta_ativa}.json")
@@ -130,6 +139,11 @@ if st.session_state[chave_store_campanha] is None and os.path.exists(arq_cache_c
     if os.path.exists(arq_cache_nome_campanha):
         with open(arq_cache_nome_campanha, "r", encoding="utf-8") as f: st.session_state[chave_nome_campanha] = f.read()
 
+if st.session_state[chave_store_dizimo] is None and os.path.exists(arq_cache_dizimo):
+    with open(arq_cache_dizimo, "rb") as f: st.session_state[chave_store_dizimo] = f.read()
+    if os.path.exists(arq_cache_nome_dizimo):
+        with open(arq_cache_nome_dizimo, "r", encoding="utf-8") as f: st.session_state[chave_nome_dizimo] = f.read()
+
 if not st.session_state[chave_modificacoes] and os.path.exists(arq_cache_modificacoes):
     try:
         with open(arq_cache_modificacoes, "r", encoding="utf-8") as f: st.session_state[chave_modificacoes] = json.load(f)
@@ -146,12 +160,16 @@ if not st.session_state[chave_historico_ocultacoes] and os.path.exists(arq_cache
     except: pass
 
 # =========================================================================
-# 📥 CARREGAMENTO DE ARQUIVOS
+# 📥 CARREGAMENTO DE ARQUIVOS (DINÂMICO CONFORME CONTA SELECIONADA)
 # =========================================================================
 st.markdown("### 📥 Carregar Arquivos do Período")
-col_up1, col_up2, col_up3, col_up4 = st.columns(4)
 
-with col_up1:
+# Define quantas colunas vão aparecer com base na conta
+mostrar_dizimo = "Conta 161" in conta_ativa or "Conta 140" in conta_ativa
+num_colunas_layout = 5 if mostrar_dizimo else 4
+colunas_upload = st.columns(num_colunas_layout)
+
+with colunas_upload[0]:
     u_extrato = st.file_uploader("📂 Arraste o Extrato do Sicoob:", type=["xlsx", "xls", "pdf"], key=f"widget_up_banco_{conta_ativa}")
     if u_extrato is not None:
         conteudo = u_extrato.getvalue()
@@ -162,7 +180,7 @@ with col_up1:
     elif st.session_state[chave_store_banco] is not None:
         st.caption(f"✅ Extrato: `{st.session_state.get(chave_nome_banco, 'Arquivo Sicoob')}`")
 
-with col_up2:
+with colunas_upload[1]:
     u_sistema = st.file_uploader("📂 Relatório Boletim / Sistema:", type=["xlsx", "xls", "csv", "pdf"], key=f"widget_up_sist_{conta_ativa}")
     if u_sistema is not None:
         conteudo = u_sistema.getvalue()
@@ -173,7 +191,7 @@ with col_up2:
     elif st.session_state[chave_store_sistema] is not None:
         st.caption(f"✅ Boletim: `{st.session_state.get(chave_nome_sistema, 'Arquivo Sistema')}`")
 
-with col_up3:
+with colunas_upload[2]:
     u_sipag = st.file_uploader("📂 Planilha Cartão SIPAG (CSV/XLSX):", type=["csv", "xlsx"], key=f"widget_up_sipag_{conta_ativa}")
     if u_sipag is not None:
         conteudo = u_sipag.getvalue()
@@ -184,7 +202,7 @@ with col_up3:
     elif st.session_state[chave_store_sipag] is not None:
         st.caption(f"✅ SIPAG: `{st.session_state.get(chave_nome_sipag, 'Arquivo SIPAG')}`")
 
-with col_up4:
+with colunas_upload[3]:
     u_campanha = st.file_uploader("📂 Planilha Cartão Campanha (CSV/XLSX):", type=["csv", "xlsx"], key=f"widget_up_campanha_{conta_ativa}")
     if u_campanha is not None:
         conteudo = u_campanha.getvalue()
@@ -195,24 +213,38 @@ with col_up4:
     elif st.session_state[chave_store_campanha] is not None:
         st.caption(f"✅ Campanha: `{st.session_state.get(chave_nome_campanha, 'Arquivo Campanha')}`")
 
-if st.session_state[chave_store_banco] or st.session_state[chave_store_sistema] or st.session_state[chave_store_sipag] or st.session_state[chave_store_campanha]:
+if mostrar_dizimo:
+    with colunas_upload[4]:
+        u_dizimo = st.file_uploader("📂 Conferência do Dízimo (CSV/XLSX):", type=["csv", "xlsx"], key=f"widget_up_dizimo_{conta_ativa}")
+        if u_dizimo is not None:
+            conteudo = u_dizimo.getvalue()
+            st.session_state[chave_store_dizimo] = conteudo
+            st.session_state[chave_nome_dizimo] = u_dizimo.name
+            with open(arq_cache_dizimo, "wb") as f: f.write(conteudo)
+            with open(arq_cache_nome_dizimo, "w", encoding="utf-8") as f: f.write(u_dizimo.name)
+        elif st.session_state[chave_store_dizimo] is not None:
+            st.caption(f"✅ Dízimo: `{st.session_state.get(chave_nome_dizimo, 'Arquivo Dízimo')}`")
+
+if st.session_state[chave_store_banco] or st.session_state[chave_store_sistema] or st.session_state[chave_store_sipag] or st.session_state[chave_store_campanha] or st.session_state[chave_store_dizimo]:
     if st.button("🗑️ Trocar / Limpar Arquivos e Apagar Cache Completamente", use_container_width=True):
         st.session_state[chave_store_banco] = None
         st.session_state[chave_store_sistema] = None
         st.session_state[chave_store_sipag] = None
         st.session_state[chave_store_campanha] = None
+        st.session_state[chave_store_dizimo] = None
         st.session_state[chave_nome_banco] = None
         st.session_state[chave_nome_sistema] = None
         st.session_state[chave_nome_sipag] = None
         st.session_state[chave_nome_campanha] = None
+        st.session_state[chave_nome_dizimo] = None
         st.session_state[chave_modificacoes] = []
         st.session_state[chave_dias_conciliados] = []
         st.session_state[chave_historico_ocultacoes] = []
         if 'indice_data' in st.session_state: del st.session_state.indice_data
         
         arquivos_para_deletar = [
-            arq_cache_banco, arq_cache_sistema, arq_cache_sipag, arq_cache_campanha,
-            arq_cache_nome_banco, arq_cache_nome_sistema, arq_cache_nome_sipag, arq_cache_nome_campanha,
+            arq_cache_banco, arq_cache_sistema, arq_cache_sipag, arq_cache_campanha, arq_cache_dizimo,
+            arq_cache_nome_banco, arq_cache_nome_sistema, arq_cache_nome_sipag, arq_cache_nome_campanha, arq_cache_nome_dizimo,
             arq_cache_modificacoes, arq_cache_dias_conciliados, arq_cache_historico_ocultacoes, arq_cache_data_ativa
         ]
         for path in arquivos_para_deletar:
@@ -314,106 +346,75 @@ def processar_sistema_theos(arquivo_bytes):
     return dados_contrapartida, saldos_sistema_por_dia
 
 # =========================================================================
-# ⚙️ ENGINE SIPAG CONSOLIDADO (FILTRO NA DATA PREVISTA DE LIQUIDAÇÃO)
+# ⚙️ ENGINE DE TRATAMENTO ISOLADO (SIPAG, CAMPANHA E DÍZIMO VIA MAPEAMENTO DE COLUNAS)
 # =========================================================================
-def processar_sipag_csv(arquivo_bytes):
-    try:
-        try:
-            df_sipag = pd.read_excel(io.BytesIO(arquivo_bytes))
-        except:
-            df_sipag = pd.read_csv(io.BytesIO(arquivo_bytes), sep=None, engine='python')
-        
-        # Remove espaços invisíveis das colunas
-        df_sipag.columns = [str(c).strip() for c in df_sipag.columns]
-        
-        dados_finais = []
-        col_data = "Data prevista de liquidacao" if "Data prevista de liquidacao" in df_sipag.columns else "Data prevista de liquidação"
-        col_bruto = "Valor parcela bruto"
-        col_desconto = "Desconto parcela"
-        col_liquido = "Valor parcela liquido"
-        
-        if col_data not in df_sipag.columns:
-            # Caso os acentos causem problemas, tenta localização parcial
-            for c in df_sipag.columns:
-                if "PREVISTA" in c.upper() and "LIQUID" in c.upper():
-                    col_data = c
-                    break
+def mapear_e_limpar_colunas(df):
+    df.columns = [str(c).strip() for c in df.columns]
+    
+    dict_renomear = {}
+    for col in df.columns:
+        c_upper = col.upper()
+        if any(x in c_upper for x in ["DATA", "DT.PGTO", "LIQUIDA"]):
+            dict_renomear[col] = "Data"
+        elif any(x in c_upper for x in ["BRUTO", "VALOR_BRUTO", "VLR BRUTO"]):
+            dict_renomear[col] = "Valor Bruto"
+        elif any(x in c_upper for x in ["DESCONTO", "TAXA", "DESC"]):
+            dict_renomear[col] = "Desconto"
+        elif any(x in c_upper for x in ["LIQUIDO", "VALOR LIQ", "VLR LIQ"]):
+            dict_renomear[col] = "Valor Líquido"
+        elif any(x in c_upper for x in ["CENTRO", "CUSTO", "CC", "DESTINO"]):
+            dict_renomear[col] = "Centro de Custo"
+            
+    return df.rename(columns=dict_renomear)
 
-        for idx, row in df_sipag.iterrows():
-            if col_data in df_sipag.columns and pd.notna(row[col_data]):
-                st_str = str(row[col_data]).strip().split()[0]
-                try:
-                    dt_f = pd.to_datetime(st_str, dayfirst=True).strftime('%d/%m/%Y')
-                    
-                    v_bruto = converter_valor_extrato(row[col_bruto]) if col_bruto in df_sipag.columns else 0.0
-                    v_taxa = converter_valor_extrato(row[col_desconto]) if col_desconto in df_sipag.columns else 0.0
-                    v_liquido = converter_valor_extrato(row[col_liquido]) if col_liquido in df_sipag.columns else v_bruto
-                    
-                    dados_finais.append({
-                        'id': f"SIPAG_{idx}", 
-                        'Data': dt_f,  # Mapeado diretamente pela Data Prevista de Liquidação
-                        'Tipo': "💳 LOTE SIPAG",
-                        'Descrição': "LIQUIDAÇÃO PREVISTA DE CARTÃO", 
-                        'Valor': abs(v_liquido), 
-                        'ValorBruto': abs(v_bruto), 
-                        'Taxa': abs(v_taxa), 
-                        'ValorLiquido': abs(v_liquido), 
-                        'Origem': 'Sipag', 
-                        'CentroCusto': "GERAL SIPAG"
-                    })
-                except: 
-                    continue
-        return pd.DataFrame(dados_finais)
-    except: 
-        return pd.DataFrame()
-
-def processar_campanha_generic(arquivo_bytes, nome_arquivo):
+def processar_planilha_isolada(arquivo_bytes, nome_arquivo):
+    if arquivo_bytes is None: return pd.DataFrame()
     try:
-        if nome_arquivo.endswith('.csv'):
+        if str(nome_arquivo).lower().endswith('.csv'):
             df = pd.read_csv(io.BytesIO(arquivo_bytes), sep=None, engine='python')
         else:
             df = pd.read_excel(io.BytesIO(arquivo_bytes))
-        
-        dados_finais = []
-        for idx, row in df.iterrows():
-            cc_valores = [str(val).strip() for val in row.values if pd.notna(val)]
-            if not cc_valores: continue
             
-            dt_f = datetime.date.today().strftime('%d/%m/%Y')
-            for val in cc_valores:
-                if '/' in val and len(val) >= 8:
-                    try:
-                        dt_f = pd.to_datetime(val, dayfirst=True, errors='coerce').strftime('%d/%m/%Y')
-                        break
-                    except: pass
-
-            valores_numericos = []
-            for val in row.values:
-                if pd.notna(val) and isinstance(val, (int, float)):
-                    valores_numericos.append(float(val))
-                elif pd.notna(val):
-                    try:
-                        v_num = converter_valor_extrato(val)
-                        if v_num != 0: valores_numericos.append(abs(v_num))
-                    except: pass
-
-            v_bruto = valores_numericos[0] if len(valores_numericos) > 0 else 0.0
-            v_taxa = valores_numericos[1] if len(valores_numericos) > 1 else 0.0
-            v_liquido = valores_numericos[2] if len(valores_numericos) > 2 else v_bruto
-            if len(valores_numericos) == 2: v_liquido = v_bruto - v_taxa
-
-            centro_custo = "CAMPANHA"
-            for val in cc_valores:
-                if any(x in val.upper() for x in ["PAROQUIA", "SFA", "CAMPANHA", "DÍZIMO", "CENTRO"]):
-                    centro_custo = val.upper()
-                    break
-
-            dados_finais.append({
-                'id': f"CAMP_{idx}", 'Data': dt_f, 'Tipo': "🎁 CAMPANHA",
-                'Descrição': f"Lancamento {idx}", 'Valor': v_bruto, 'ValorBruto': v_bruto, 'Taxa': v_taxa, 'ValorLiquido': v_liquido, 'Origem': 'Campanha', 'CentroCusto': centro_custo
-            })
-        return pd.DataFrame(dados_finais)
-    except: return pd.DataFrame()
+        df = mapear_e_limpar_colunas(df)
+        
+        colunas_obrigatorias = ["Data", "Valor Bruto", "Desconto", "Valor Líquido"]
+        for col in colunas_obrigatorias:
+            if col not in df.columns:
+                if col == "Desconto": df["Desconto"] = 0.0
+                elif col == "Valor Líquido" and "Valor Bruto" in df.columns: df["Valor Líquido"] = df["Valor Bruto"]
+                else: df[col] = 0.0
+                
+        if "Centro de Custo" not in df.columns:
+            df["Centro de Custo"] = "NÃO ESPECIFICADO"
+            
+        dados_processados = []
+        for idx, row in df.iterrows():
+            if pd.isna(row["Data"]): continue
+            
+            try:
+                dt_str = str(row["Data"]).strip().split()[0]
+                dt_f = pd.to_datetime(dt_str, dayfirst=True, errors='coerce').strftime('%d/%m/%Y')
+                if not dt_f: continue
+                
+                v_bruto = abs(converter_valor_extrato(row["Valor Bruto"]))
+                v_desc = abs(converter_valor_extrato(row["Desconto"]))
+                v_liq = abs(converter_valor_extrato(row["Valor Líquido"]))
+                
+                # Garante cálculo se faltar informação direta
+                if v_liq == 0 and v_bruto != 0: v_liq = v_bruto - v_desc
+                
+                dados_processados.append({
+                    "Data": dt_f,
+                    "Valor Bruto": v_bruto,
+                    "Desconto": v_desc,
+                    "Valor Líquido": v_liq,
+                    "Centro de Custo": str(row["Centro de Custo"]).strip().upper()
+                })
+            except:
+                pass
+        return pd.DataFrame(dados_processados)
+    except:
+        return pd.DataFrame()
 
 # =========================================================================
 # 📊 FLUXO DE EXECUÇÃO PRINCIPAL
@@ -438,13 +439,10 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
     df_b_orig = pd.DataFrame(dados_banco_finais)
     df_s_orig = pd.DataFrame(dados_t)
 
-    df_sipag_orig = pd.DataFrame()
-    if st.session_state[chave_store_sipag]:
-        df_sipag_orig = processar_sipag_csv(st.session_state[chave_store_sipag])
-
-    df_campanha_orig = pd.DataFrame()
-    if st.session_state[chave_store_campanha]:
-        df_campanha_orig = processar_campanha_generic(st.session_state[chave_store_campanha], st.session_state[chave_nome_campanha])
+    # Processamento Isolado das Tabelas de Suporte (Sem amarrações ao fluxo principal)
+    df_sipag_isolado = processar_planilha_isolada(st.session_state[chave_store_sipag], st.session_state.get(chave_nome_sipag, ''))
+    df_campanha_isolado = processar_planilha_isolada(st.session_state[chave_store_campanha], st.session_state.get(chave_nome_campanha, ''))
+    df_dizimo_isolado = processar_planilha_isolada(st.session_state[chave_store_dizimo], st.session_state.get(chave_nome_dizimo, ''))
 
     for mod in st.session_state[chave_modificacoes]:
         if mod['acao'] == 'excluir':
@@ -525,7 +523,7 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
     else:
         col_s4.metric("🎯 Alinhamento de Saldos", "⚠️ CONFERIR AJUSTES", delta=f"Dif. Total: R$ {diferenca_visual:,.2f}", delta_color="inverse")
 
-    aba_conciliacao, aba_cartoes, aba_historico = st.tabs(["🔄 Esteira de Conciliação Diária", "📊 Visualizador Isolado de Cartões (SIPAG/Campanha)", "📋 Histórico de Fechamento"])
+    aba_conciliacao, aba_cartoes, aba_historico = st.tabs(["🔄 Esteira de Conciliação Diária", "📊 Visualizador Isolado de Planilhas (Suporte)", "📋 Histórico de Fechamento"])
 
     with aba_conciliacao:
         if not datas_pendentes and data_selecionada not in st.session_state[chave_dias_conciliados]:
@@ -570,6 +568,72 @@ if st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]
 
         st.markdown("---")
         col1, col2 = st.columns(2)
-        
         with col1:
-            pass  # Mantido conforme original (o seu bloco original terminava aqui no prompt)
+            st.markdown(f"<div class='titulo-coluna'>📊 Extrato Sicoob ({data_selecionada})</div>", unsafe_allow_html=True)
+            if df_banco_tela.empty: st.info("Nenhum registro para esta data.")
+            else:
+                for idx, r in df_banco_tela.iterrows():
+                    st.checkbox(f"{r['Tipo']} | {r['Descrição']} | **R$ {r['Valor']:,.2f}**", key=f"chk_{r['id']}")
+        with col2:
+            st.markdown(f"<div class='titulo-coluna-igreja'>⛪ Sistema Eclesial ({data_selecionada})</div>", unsafe_allow_html=True)
+            if df_sistema_tela.empty: st.info("Nenhum registro para esta data.")
+            else:
+                for idx, r in df_sistema_tela.iterrows():
+                    st.checkbox(f"{r['Tipo']} | {r['Descrição']} | **R$ {r['Valor']:,.2f}**", key=f"chk_{r['id']}")
+
+    # =========================================================================
+    # 📊 NOVA ABA: VISUALIZADOR ISOLADO TOTALMENTE DINÂMICO POR DATA
+    # =========================================================================
+    with aba_cartoes:
+        st.markdown(f"### 📋 Consulta de Planilhas Auxiliares - Data Base: `{data_selecionada}`")
+        st.caption("Os dados abaixo servem exclusivamente para consulta e não afetam os saldos de conciliação do Boletim.")
+        
+        c_v1, c_v2, c_v3 = st.columns(3)
+        
+        # 💳 SUB-PAINEL SIPAG
+        with c_v1:
+            st.markdown("<div class='titulo-coluna-sipag'>💳 Movimentação Cartão SIPAG</div>", unsafe_allow_html=True)
+            if df_sipag_isolado.empty:
+                st.info("Nenhum dado carregado ou formato incompatível.")
+            else:
+                df_sipag_dia = df_sipag_isolado[df_sipag_isolado["Data"] == data_selecionada]
+                if df_sipag_dia.empty:
+                    st.warning(f"Sem lançamentos previstos para {data_selecionada}.")
+                else:
+                    tot_liq = df_sipag_dia["Valor Líquido"].sum()
+                    st.markdown(f"<div class='caixa-soma'>Soma Líquida do Dia: R$ {tot_liq:,.2f}</div>", unsafe_allow_html=True)
+                    st.dataframe(df_sipag_dia[["Valor Bruto", "Desconto", "Valor Líquido", "Centro de Custo"]], hide_index=True, use_container_width=True)
+                    
+        # 🎁 SUB-PAINEL CAMPANHA
+        with c_v2:
+            st.markdown("<div class='titulo-coluna-campanha'>🎁 Lançamentos Cartão Campanha</div>", unsafe_allow_html=True)
+            if df_campanha_isolado.empty:
+                st.info("Nenhum dado carregado ou formato incompatível.")
+            else:
+                df_campanha_dia = df_campanha_isolado[df_campanha_isolado["Data"] == data_selecionada]
+                if df_campanha_dia.empty:
+                    st.warning(f"Sem lançamentos previstos para {data_selecionada}.")
+                else:
+                    tot_liq = df_campanha_dia["Valor Líquido"].sum()
+                    st.markdown(f"<div class='caixa-soma'>Soma Líquida do Dia: R$ {tot_liq:,.2f}</div>", unsafe_allow_html=True)
+                    st.dataframe(df_campanha_dia[["Valor Bruto", "Desconto", "Valor Líquido", "Centro de Custo"]], hide_index=True, use_container_width=True)
+
+        # ⛪ SUB-PAINEL CONFERÊNCIA DO DÍZIMO
+        with c_v3:
+            st.markdown("<div class='titulo-coluna'>⛪ Conferência de Dízimo Auxiliar</div>", unsafe_allow_html=True)
+            if not mostrar_dizimo:
+                st.caption("Disponível apenas para seleção de Conta 161 ou Conta 140.")
+            elif df_dizimo_isolado.empty:
+                st.info("Nenhum arquivo de dízimo anexado no topo.")
+            else:
+                df_dizimo_dia = df_dizimo_isolado[df_dizimo_isolado["Data"] == data_selecionada]
+                if df_dizimo_dia.empty:
+                    st.warning(f"Sem dados de dízimo para {data_selecionada}.")
+                else:
+                    tot_liq = df_dizimo_dia["Valor Líquido"].sum()
+                    st.markdown(f"<div class='caixa-soma'>Total Dízimo Coletado: R$ {tot_liq:,.2f}</div>", unsafe_allow_html=True)
+                    st.dataframe(df_dizimo_dia[["Valor Bruto", "Desconto", "Valor Líquido", "Centro de Custo"]], hide_index=True, use_container_width=True)
+
+    with aba_historico:
+        st.markdown("### Histórico de Fechamento")
+        st.write("Registros consolidados aparecerão aqui.")
