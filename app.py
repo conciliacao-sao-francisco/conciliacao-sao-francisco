@@ -15,8 +15,9 @@ import json
 st.set_page_config(page_title="Conciliador Multi-Contas São Francisco", layout="wide")
 
 CACHE_DIR = "cache_arquivos"
+# CORREÇÃO 1: Adicionado exist_ok=True para evitar falha no Streamlit Cloud
 if not os.path.exists(CACHE_DIR):
-    os.makedirs(CACHE_DIR)
+    os.makedirs(CACHE_DIR, exist_ok=True)
 
 # =========================================================================
 # 🔐 SISTEMA DE SEGURANÇA VIA URL PARAMS
@@ -94,7 +95,6 @@ chave_nome_dizimo = f"nome_dizimo_{conta_ativa}"
 chave_modificacoes = f"modificacoes_ajustes_{conta_ativa}"
 chave_dias_conciliados = f"dias_conciliados_{conta_ativa}"
 chave_historico_ocultacoes = f"historico_ocultacoes_{conta_ativa}"
-chave_data_atual_salva = f"data_salva_progresso_{conta_ativa}"
 
 if chave_store_banco not in st.session_state: st.session_state[chave_store_banco] = None
 if chave_store_sistema not in st.session_state: st.session_state[chave_store_sistema] = None
@@ -230,7 +230,6 @@ else:
 
     if mostrar_dizimo:
         with colunas_upload[4]:
-            # 📄 AJUSTE CRUCIAL: Adicionado "xls" na lista de formatos aceitos para evitar o erro de recusa vermelho
             u_dizimo = st.file_uploader("📂 Conferência do Dízimo (CSV/XLSX/XLS):", type=["csv", "xlsx", "xls"], key=f"widget_up_dizimo_{conta_ativa}")
             if u_dizimo is not None:
                 conteudo = u_dizimo.getvalue()
@@ -380,7 +379,6 @@ def processar_planilha_isolada(arquivo_bytes, nome_arquivo):
         if str(nome_arquivo).lower().endswith('.csv'):
             df = pd.read_csv(io.BytesIO(arquivo_bytes), sep=None, engine='python')
         else:
-            # Mecanismo que aceita tanto arquivos novos .xlsx quanto os antigos .xls
             df = pd.read_excel(io.BytesIO(arquivo_bytes))
             
         df = mapear_e_limpar_colunas(df)
@@ -441,7 +439,7 @@ if not eh_poupanca and st.session_state[chave_store_banco] and st.session_state[
     df_b_orig = pd.DataFrame(dados_banco_finais)
     df_s_orig = pd.DataFrame(dados_t)
 
-    # Processamento Isolado das Tabelas de Suporte (Sem travar a conciliação principal)
+    # Processamento Isolado das Tabelas de Suporte
     df_sipag_isolado = processar_planilha_isolada(st.session_state[chave_store_sipag], st.session_state.get(chave_nome_sipag, ''))
     df_campanha_isolado = processar_planilha_isolada(st.session_state[chave_store_campanha], st.session_state.get(chave_nome_campanha, ''))
     df_dizimo_isolado = processar_planilha_isolada(st.session_state[chave_store_dizimo], st.session_state.get(chave_nome_dizimo, ''))
@@ -525,9 +523,6 @@ if not eh_poupanca and st.session_state[chave_store_banco] and st.session_state[
                 for idx, r in df_sistema_dia.iterrows():
                     st.checkbox(f"{r['Tipo']} | {r['Descrição']} | **R$ {r['Valor']:,.2f}**", key=f"chk_{r['id']}")
 
-    # =========================================================================
-    # 📊 CONSULTA DAS ABAS AUXILIARES POR DATA COMPLETAMENTE ISOLADO
-    # =========================================================================
     with aba_cartoes:
         st.markdown(f"### 📋 Lançamentos Relativos das Planilhas - Data Base: `{data_selecionada}`")
         c_v1, c_v2, c_v3 = st.columns(3)
