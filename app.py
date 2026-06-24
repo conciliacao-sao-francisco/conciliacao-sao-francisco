@@ -15,6 +15,7 @@ import json
 st.set_page_config(page_title="Conciliador Multi-Contas São Francisco", layout="wide")
 
 CACHE_DIR = "cache_arquivos"
+# CORREÇÃO 1: Adicionado exist_ok=True para evitar o erro de pasta existente
 if not os.path.exists(CACHE_DIR):
     os.makedirs(CACHE_DIR, exist_ok=True)
 
@@ -242,16 +243,14 @@ else:
 
 if st.session_state[chave_store_banco] or st.session_state[chave_store_sistema] or st.session_state[chave_store_sipag] or st.session_state[chave_store_campanha] or st.session_state[chave_store_dizimo]:
     if st.button("🗑️ Trocar / Limpar Arquivos e Apagar Cache Completamente", use_container_width=True):
-        st.session_state[chave_store_banco] = None
-        st.session_state[chave_store_sistema] = None
-        st.session_state[chave_store_sipag] = None
-        st.session_state[chave_store_campanha] = None
-        st.session_state[chave_store_dizimo] = None
-        st.session_state[chave_nome_banco] = None
-        st.session_state[chave_nome_sistema] = None
-        st.session_state[chave_nome_sipag] = None
-        st.session_state[chave_nome_campanha] = None
-        st.session_state[chave_nome_dizimo] = None
+        # CORREÇÃO 2: Garantindo o reset correto de todas as chaves de controle com o nome idêntico à declaração
+        lista_resets = [
+            chave_store_banco, chave_store_sistema, chave_store_sipag, chave_store_campanha, chave_store_dizimo,
+            chave_nome_banco, chave_nome_sistema, chave_nome_sipag, chave_nome_campanha, chave_nome_dizimo
+        ]
+        for k in lista_resets:
+            st.session_state[k] = None
+            
         st.session_state[chave_modificacoes] = []
         st.session_state[chave_dias_conciliados] = []
         st.session_state[chave_historico_ocultacoes] = []
@@ -283,12 +282,10 @@ def converter_valor_extrato(val_str):
         return -valor_float if eh_debito else valor_float
     except: return 0.0
 
-# CORREÇÃO INTEGRAL BASEADA NA FOTO DO SICOOB (Captura do Histórico Completo)
 def processar_extrato_sicoob(arquivo_bytes):
     df_s_bruto = pd.read_excel(io.BytesIO(arquivo_bytes), skiprows=1)
     saldos_finais_por_dia = {}
     
-    # Primeiro mapeia os saldos finais diários
     for _, row in df_s_bruto.iterrows():
         if len(row) < 4: continue
         historico = str(row.iloc[2]).strip().upper()
@@ -302,14 +299,12 @@ def processar_extrato_sicoob(arquivo_bytes):
     dados_banco_brutos = []
     linha_mestre = None
     
-    # Varre as linhas montando o bloco histórico + detalhes estruturado do Sicoob
     for _, row in df_s_bruto.iterrows():
         if len(row) < 4: continue
         data_orig = row.iloc[0]
         historico = str(row.iloc[2]).strip().upper()
         if "SALDO" in historico: continue
         
-        # Se a linha tem data, ela inicia um novo lançamento mestre
         if pd.notna(data_orig) and '/' in str(data_orig):
             if linha_mestre: dados_banco_brutos.append(linha_mestre)
             linha_mestre = {
@@ -319,7 +314,6 @@ def processar_extrato_sicoob(arquivo_bytes):
                 'Detalhes': ''
             }
         else:
-            # Se a linha não tem data, ela é o complemento/detalhe (Ex: Nome de quem fez o PIX)
             if linha_mestre:
                 detalhe_limpo = " ".join([str(v).strip() for v in row.values if pd.notna(v) and str(v).strip() != ""])
                 if detalhe_limpo:
@@ -466,7 +460,6 @@ if not eh_poupanca and st.session_state[chave_store_banco] and st.session_state[
         elif "PAGTO TITULO" in hist_u or "PAGAMENTO" in hist_u: tipo = "🔴 PAGTO TITULO"
         elif "SIPAG" in hist_u or "COMPRAS" in hist_u: tipo = "💳 SIPAG LOTE"
         
-        # Junta histórico + os detalhes completos sem cortes estáticos
         desc_completa = f"{item['Histórico']} {item['Detalhes']}".strip().upper()
         dados_banco_finais.append({
             'id': f"B_{idx}", 'Data': item['Data'], 'Tipo': tipo,
