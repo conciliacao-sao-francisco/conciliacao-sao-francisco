@@ -353,21 +353,33 @@ def processar_sistema_theos(arquivo_bytes):
     except: pass
     return dados_contrapartida, saldos_sistema_por_dia
 
-def processar_planilha_dizimo_analitico(arquivo_bytes):
+# CORREÇÃO AQUI: Função de dízimo otimizada e com mapeamento robusto de colunas e motores
+def processar_planilha_dizimo_analitico(arquivo_bytes, nome_arquivo=""):
     if arquivo_bytes is None: return []
     try:
-        df = pd.read_excel(io.BytesIO(arquivo_bytes))
+        nome_str = str(nome_arquivo).lower()
+        if nome_str.endswith('.csv'):
+            df = pd.read_csv(io.BytesIO(arquivo_bytes), sep=None, engine='python')
+        elif nome_str.endswith('.xls'):
+            df = pd.read_excel(io.BytesIO(arquivo_bytes), engine='xlrd')
+        else:
+            df = pd.read_excel(io.BytesIO(arquivo_bytes))
+            
         df.columns = [str(c).strip() for c in df.columns]
         
         col_data, col_nome, col_valor = None, None, None
         for col in df.columns:
             c_upper = col.upper()
-            if "DT.OFERTA" in c_upper or "OFERTA" in c_upper: col_data = col
-            elif "NOME" in c_upper: col_nome = col
-            elif "VALOR" in c_upper: col_valor = col
+            if any(x in c_upper for x in ["DT.OFERTA", "OFERTA", "DATA", "DT.PGTO", "DT.RECEB", "MOVIMENTO"]): 
+                col_data = col
+            elif "NOME" in c_upper or "CONTRIBUINTE" in c_upper or "FIEL" in c_upper: 
+                col_nome = col
+            elif "VALOR" in c_upper or "VLR" in c_upper or "LIQUIDO" in c_upper: 
+                col_valor = col
+                
+        if not col_data or not col_nome or not col_valor: 
+            return []
             
-        if not col_data or not col_nome or not col_valor: return []
-        
         dados_dizimo = []
         for idx, row in df.iterrows():
             d_val = row[col_data]
@@ -375,7 +387,7 @@ def processar_planilha_dizimo_analitico(arquivo_bytes):
             v_val = row[col_valor]
             
             if pd.isna(d_val) or pd.isna(n_val) or pd.isna(v_val): continue
-            if "VALOR TOTAL" in str(n_val).upper(): continue
+            if any(x in str(n_val).upper() for x in ["VALOR TOTAL", "SUBTOTAL", "TOTAL"]): continue
             
             try:
                 dt_clean = str(d_val).strip().split()[0]
@@ -449,7 +461,12 @@ def processar_planilha_isolada(arquivo_bytes, nome_arquivo):
 if not eh_poupanca and st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]:
     dados_b, mapa_saldos_banco = processar_extrato_sicoob(st.session_state[chave_store_banco])
     dados_t, mapa_saldos_theos = processar_sistema_theos(st.session_state[chave_store_sistema])
-    dados_d = processar_planilha_dizimo_analitico(st.session_state[chave_store_dizimo])
+    
+    # CORREÇÃO AQUI: Chamada ajustada para passar o conteúdo mais o nome do arquivo dinamicamente
+    dados_d = processar_planilha_dizimo_analitico(
+        st.session_state[chave_store_dizimo], 
+        st.session_state.get(chave_nome_dizimo, '')
+    )
     
     dados_banco_finais = []
     for idx, item in enumerate(dados_b):
@@ -559,6 +576,3 @@ if not eh_poupanca and st.session_state[chave_store_banco] and st.session_state[
                 else:
                     st.markdown(f"<div class='caixa-soma'>Soma Líquida do Dia: R$ {df_campanha_dia['Valor Líquido'].sum():,.2f}</div>", unsafe_allow_html=True)
                     st.dataframe(df_campanha_dia[["Valor Bruto", "Desconto", "Valor Líquido", "Centro de Custo"]], hide_index=True, use_container_width=True)
-
-elif not st.session_state[chave_store_banco] and not eh_poupanca:
-    st.info("Por favor, certifique-se de carregar os arquivos base acima para iniciar os trabalhos de conciliação.")
