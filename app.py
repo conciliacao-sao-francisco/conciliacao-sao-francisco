@@ -1,5 +1,5 @@
 import logging
-logging.getLogger("asyncio").setLevel(logging.CRITICAL)  # Silencia avisos no terminal
+logging.getLogger("asyncio").setLevel(logging.CRITICAL)
 
 import streamlit as st
 import pandas as pd
@@ -10,12 +10,11 @@ import os
 import json
 
 # =========================================================================
-# ⚙️ CONFIGURAÇÃO DA PÁGINA (DEVE SER O PRIMEIRO COMANDO STREAMLIT)
+# ⚙️ CONFIGURAÇÃO DA PÁGINA
 # =========================================================================
 st.set_page_config(page_title="Conciliador Multi-Contas São Francisco", layout="wide")
 
 CACHE_DIR = "cache_arquivos"
-# CORREÇÃO 1: Adicionado exist_ok=True para evitar falha no Streamlit Cloud
 if not os.path.exists(CACHE_DIR):
     os.makedirs(CACHE_DIR, exist_ok=True)
 
@@ -61,10 +60,10 @@ st.markdown("""
     .stTabs [data-baseweb="tab"] { font-size: 16px; font-weight: 600; padding: 10px 20px; }
     .titulo-coluna { display: flex; align-items: center; background-color: #f8f9fa; padding: 12px; border-radius: 8px; border-left: 5px solid #004B87; margin-bottom: 5px; font-weight: bold; }
     .titulo-coluna-igreja { display: flex; align-items: center; background-color: #fdfaf6; padding: 12px; border-radius: 8px; border-left: 5px solid #8B4513; margin-bottom: 5px; font-weight: bold; }
+    .titulo-coluna-dizimo { display: flex; align-items: center; background-color: #fefaf0; padding: 12px; border-radius: 8px; border-left: 5px solid #e6a23c; margin-bottom: 5px; font-weight: bold; }
     .titulo-coluna-sipag { display: flex; align-items: center; background-color: #f4fbf7; padding: 12px; border-radius: 8px; border-left: 5px solid #28a745; margin-bottom: 5px; font-weight: bold; }
     .titulo-coluna-campanha { display: flex; align-items: center; background-color: #fbf4f9; padding: 12px; border-radius: 8px; border-left: 5px solid #d946ef; margin-bottom: 5px; font-weight: bold; }
     .caixa-soma { background-color: #f1f3f5; padding: 8px 12px; border-radius: 6px; font-size: 16px; font-weight: bold; margin-bottom: 15px; text-align: center; border: 1px solid #cbd5e1; color: #0f172a; }
-    .caixa-saida-d { background-color: #fef2f2; padding: 8px 12px; border-radius: 6px; font-size: 15px; font-weight: bold; margin-bottom: 15px; border: 1px solid #fee2e2; color: #dc2626; text-align: center; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -284,10 +283,12 @@ def converter_valor_extrato(val_str):
         return -valor_float if eh_debito else valor_float
     except: return 0.0
 
+# CORREÇÃO INTEGRAL BASEADA NA FOTO DO SICOOB (Captura do Histórico Completo)
 def processar_extrato_sicoob(arquivo_bytes):
     df_s_bruto = pd.read_excel(io.BytesIO(arquivo_bytes), skiprows=1)
     saldos_finais_por_dia = {}
     
+    # Primeiro mapeia os saldos finais diários
     for _, row in df_s_bruto.iterrows():
         if len(row) < 4: continue
         historico = str(row.iloc[2]).strip().upper()
@@ -300,23 +301,31 @@ def processar_extrato_sicoob(arquivo_bytes):
 
     dados_banco_brutos = []
     linha_mestre = None
+    
+    # Varre as linhas montando o bloco histórico + detalhes estruturado do Sicoob
     for _, row in df_s_bruto.iterrows():
         if len(row) < 4: continue
         data_orig = row.iloc[0]
         historico = str(row.iloc[2]).strip().upper()
         if "SALDO" in historico: continue
         
+        # Se a linha tem data, ela inicia um novo lançamento mestre
         if pd.notna(data_orig) and '/' in str(data_orig):
-            if linenhamestre := linha_mestre: dados_banco_brutos.append(linenhamestre)
+            if linha_mestre: dados_banco_brutos.append(linha_mestre)
             linha_mestre = {
                 'Data': pd.to_datetime(str(data_orig).strip(), dayfirst=True).strftime('%d/%m/%Y'),
-                'Histórico': historico, 'Valor': converter_valor_extrato(row.iloc[3]), 'Detalhes': ''
+                'Histórico': historico, 
+                'Valor': converter_valor_extrato(row.iloc[3]), 
+                'Detalhes': ''
             }
         else:
+            # Se a linha não tem data, ela é o complemento/detalhe (Ex: Nome de quem fez o PIX)
             if linha_mestre:
-                linha_mestre['Detalhes'] += " " + " ".join([str(v).strip() for v in row.values if pd.notna(v)])
+                detalhe_limpo = " ".join([str(v).strip() for v in row.values if pd.notna(v) and str(v).strip() != ""])
+                if detalhe_limpo:
+                    linha_mestre['Detalhes'] += " " + detalhe_limpo
                 
-    if linenhamestre := linha_mestre: dados_banco_brutos.append(linha_mestre)
+    if linha_mestre: dados_banco_brutos.append(linha_mestre)
     return dados_banco_brutos, saldos_finais_por_dia
 
 def processar_sistema_theos(arquivo_bytes):
@@ -347,30 +356,59 @@ def processar_sistema_theos(arquivo_bytes):
                             'id': f"T_{idx_t}", 'Data': dt_f,
                             'Tipo': "ENTRADA" if v_liq > 0 else "SAÍDA", 'Descrição': desc, 'Valor': round(v_liq, 2), 'Origem': 'Sistema'
                         })
-    except:
-        pass
-            
+    except: pass
     return dados_contrapartida, saldos_sistema_por_dia
 
-# =========================================================================
-# ⚙️ ENGINE DE TRATAMENTO ISOLADO (MAPEAMENTO DE COLUNAS ADAPTÁVEL)
-# =========================================================================
+def processar_planilha_dizimo_analitico(arquivo_bytes):
+    if arquivo_bytes is None: return []
+    try:
+        df = pd.read_excel(io.BytesIO(arquivo_bytes))
+        df.columns = [str(c).strip() for c in df.columns]
+        
+        col_data, col_nome, col_valor = None, None, None
+        for col in df.columns:
+            c_upper = col.upper()
+            if "DT.OFERTA" in c_upper or "OFERTA" in c_upper: col_data = col
+            elif "NOME" in c_upper: col_nome = col
+            elif "VALOR" in c_upper: col_valor = col
+            
+        if not col_data or not col_nome or not col_valor: return []
+        
+        dados_dizimo = []
+        for idx, row in df.iterrows():
+            d_val = row[col_data]
+            n_val = row[col_nome]
+            v_val = row[col_valor]
+            
+            if pd.isna(d_val) or pd.isna(n_val) or pd.isna(v_val): continue
+            if "VALOR TOTAL" in str(n_val).upper(): continue
+            
+            try:
+                dt_clean = str(d_val).strip().split()[0]
+                dt_f = pd.to_datetime(dt_clean, dayfirst=True, errors='coerce').strftime('%d/%m/%Y')
+                if not dt_f: continue
+                
+                v_float = abs(converter_valor_extrato(str(v_val)))
+                if v_float == 0: continue
+                
+                dados_dizimo.append({
+                    'id': f"D_{idx}", 'Data': dt_f, 'Tipo': "🙏 DÍZIMO",
+                    'Descrição': str(n_val).strip().upper(), 'Valor': round(v_float, 2), 'Origem': 'Dizimo'
+                })
+            except: pass
+        return dados_dizimo
+    except: return []
+
 def mapear_e_limpar_colunas(df):
     df.columns = [str(c).strip() for c in df.columns]
     dict_renomear = {}
     for col in df.columns:
         c_upper = col.upper()
-        if any(x in c_upper for x in ["DATA", "DT.PGTO", "LIQUIDA", "DT_VENDA", "MOVIMENTO"]):
-            dict_renomear[col] = "Data"
-        elif any(x in c_upper for x in ["BRUTO", "VALOR_BRUTO", "VLR BRUTO"]):
-            dict_renomear[col] = "Valor Bruto"
-        elif any(x in c_upper for x in ["DESCONTO", "TAXA", "DESC"]):
-            dict_renomear[col] = "Desconto"
-        elif any(x in c_upper for x in ["LIQUIDO", "VALOR LIQ", "VLR LIQ", "VALOR_LIQ"]):
-            dict_renomear[col] = "Valor Líquido"
-        elif any(x in c_upper for x in ["CENTRO", "CUSTO", "CC", "DESTINO", "CONTA"]):
-            dict_renomear[col] = "Centro de Custo"
-            
+        if any(x in c_upper for x in ["DATA", "DT.PGTO", "LIQUIDA", "DT_VENDA", "MOVIMENTO"]): dict_renomear[col] = "Data"
+        elif any(x in c_upper for x in ["BRUTO", "VALOR_BRUTO", "VLR BRUTO"]): dict_renomear[col] = "Valor Bruto"
+        elif any(x in c_upper for x in ["DESCONTO", "TAXA", "DESC"]): dict_renomear[col] = "Desconto"
+        elif any(x in c_upper for x in ["LIQUIDO", "VALOR LIQ", "VLR LIQ", "VALOR_LIQ"]): dict_renomear[col] = "Valor Líquido"
+        elif any(x in c_upper for x in ["CENTRO", "CUSTO", "CC", "DESTINO", "CONTA"]): dict_renomear[col] = "Centro de Custo"
     return df.rename(columns=dict_renomear)
 
 def processar_planilha_isolada(arquivo_bytes, nome_arquivo):
@@ -382,7 +420,6 @@ def processar_planilha_isolada(arquivo_bytes, nome_arquivo):
             df = pd.read_excel(io.BytesIO(arquivo_bytes))
             
         df = mapear_e_limpar_colunas(df)
-        
         colunas_obrigatorias = ["Data", "Valor Bruto", "Desconto", "Valor Líquido"]
         for col in colunas_obrigatorias:
             if col not in df.columns:
@@ -390,8 +427,7 @@ def processar_planilha_isolada(arquivo_bytes, nome_arquivo):
                 elif col == "Valor Líquido" and "Valor Bruto" in df.columns: df["Valor Líquido"] = df["Valor Bruto"]
                 else: df[col] = 0.0
                 
-        if "Centro de Custo" not in df.columns:
-            df["Centro de Custo"] = "NÃO ESPECIFICADO"
+        if "Centro de Custo" not in df.columns: df["Centro de Custo"] = "NÃO ESPECIFICADO"
             
         dados_processados = []
         for idx, row in df.iterrows():
@@ -405,23 +441,21 @@ def processar_planilha_isolada(arquivo_bytes, nome_arquivo):
                 v_desc = abs(converter_valor_extrato(row["Desconto"]))
                 v_liq = abs(converter_valor_extrato(row["Valor Líquido"]))
                 
-                if v_liq == 0 and v_bruto != 0: v_liq = v_bruto - v_desc
-                
                 dados_processados.append({
                     "Data": dt_f, "Valor Bruto": v_bruto, "Desconto": v_desc, "Valor Líquido": v_liq,
                     "Centro de Custo": str(row["Centro de Custo"]).strip().upper()
                 })
             except: pass
         return pd.DataFrame(dados_processados)
-    except:
-        return pd.DataFrame()
+    except: return pd.DataFrame()
 
 # =========================================================================
-# 📊 FLUXO DE EXECUÇÃO - PROCESSAMENTO PRINCIPAL DAS CONTAS CORRENTES
+# 📊 FLUXO PRINCIPAL DE EXECUÇÃO
 # =========================================================================
 if not eh_poupanca and st.session_state[chave_store_banco] and st.session_state[chave_store_sistema]:
     dados_b, mapa_saldos_banco = processar_extrato_sicoob(st.session_state[chave_store_banco])
     dados_t, mapa_saldos_theos = processar_sistema_theos(st.session_state[chave_store_sistema])
+    dados_d = processar_planilha_dizimo_analitico(st.session_state[chave_store_dizimo])
     
     dados_banco_finais = []
     for idx, item in enumerate(dados_b):
@@ -432,29 +466,19 @@ if not eh_poupanca and st.session_state[chave_store_banco] and st.session_state[
         elif "PAGTO TITULO" in hist_u or "PAGAMENTO" in hist_u: tipo = "🔴 PAGTO TITULO"
         elif "SIPAG" in hist_u or "COMPRAS" in hist_u: tipo = "💳 SIPAG LOTE"
         
+        # Junta histórico + os detalhes completos sem cortes estáticos
+        desc_completa = f"{item['Histórico']} {item['Detalhes']}".strip().upper()
         dados_banco_finais.append({
             'id': f"B_{idx}", 'Data': item['Data'], 'Tipo': tipo,
-            'Descrição': item['Histórico'] + " " + item['Detalhes'][:40], 'Valor': item['Valor'], 'Origem': 'Banco'
+            'Descrição': desc_completa, 'Valor': item['Valor'], 'Origem': 'Banco'
         })
+        
     df_b_orig = pd.DataFrame(dados_banco_finais)
     df_s_orig = pd.DataFrame(dados_t)
+    df_d_orig = pd.DataFrame(dados_d) if dados_d else pd.DataFrame()
 
-    # Processamento Isolado das Tabelas de Suporte
     df_sipag_isolado = processar_planilha_isolada(st.session_state[chave_store_sipag], st.session_state.get(chave_nome_sipag, ''))
     df_campanha_isolado = processar_planilha_isolada(st.session_state[chave_store_campanha], st.session_state.get(chave_nome_campanha, ''))
-    df_dizimo_isolado = processar_planilha_isolada(st.session_state[chave_store_dizimo], st.session_state.get(chave_nome_dizimo, ''))
-
-    for mod in st.session_state[chave_modificacoes]:
-        if mod['acao'] == 'excluir':
-            df_b_orig = df_b_orig[df_b_orig['id'] != mod['id']]
-            if not df_s_orig.empty: df_s_orig = df_s_orig[df_s_orig['id'] != mod['id']]
-        elif mod['acao'] == 'editar' or mod['acao'] == 'edit':
-            df_b_orig.loc[df_b_orig['id'] == mod['id'], ['Descrição', 'Valor', 'Data']] = [mod['desc'], mod['valor'], mod['data']]
-            if not df_s_orig.empty: df_s_orig.loc[df_s_orig['id'] == mod['id'], ['Descrição', 'Valor', 'Data']] = [mod['desc'], mod['valor'], mod['data']]
-        elif mod['acao'] == 'inserir':
-            nova_linha = pd.DataFrame([{'id': mod['id'], 'Data': mod['data'], 'Tipo': '🔹 AJUSTE', 'Descrição': mod['desc'], 'Valor': mod['valor'], 'Origem': mod['origem']}])
-            if mod['origem'] == 'Banco': df_b_orig = pd.concat([df_b_orig, nova_linha], ignore_index=True)
-            elif mod['origem'] == 'Sistema': df_s_orig = pd.concat([df_s_orig, nova_linha], ignore_index=True)
 
     todas_datas_totais = sorted(list(set(df_b_orig['Data'].unique()).union(set(df_s_orig['Data'].unique()))), key=lambda x: pd.to_datetime(x, dayfirst=True))
     datas_pendentes = [d for d in todas_datas_totais if d not in st.session_state[chave_dias_conciliados]]
@@ -479,17 +503,10 @@ if not eh_poupanca and st.session_state[chave_store_banco] and st.session_state[
             data_selecionada = st.selectbox("📆 Dias Pendentes de Baixa:", datas_pendentes, index=st.session_state.indice_data)
             st.session_state.indice_data = datas_pendentes.index(data_selecionada)
             with open(arq_cache_data_ativa, "w", encoding="utf-8") as f: f.write(data_selecionada)
-        else:
-            st.success("🎉 Nenhum dia pendente!")
 
     df_banco_dia = df_b_orig[df_b_orig['Data'] == data_selecionada].copy() if data_selecionada else pd.DataFrame()
     df_sistema_dia = df_s_orig[df_s_orig['Data'] == data_selecionada].copy() if (not df_s_orig.empty and data_selecionada) else pd.DataFrame()
-
-    todos_ocultados = set()
-    for lista_ids in st.session_state[chave_historico_ocultacoes]: todos_ocultados.update(lista_ids)
-
-    if not df_banco_dia.empty: df_banco_dia = df_banco_dia[~df_banco_dia['id'].isin(todos_ocultados)]
-    if not df_sistema_dia.empty: df_sistema_dia = df_sistema_dia[~df_sistema_dia['id'].isin(todos_ocultados)]
+    df_dizimo_dia = df_d_orig[df_d_orig['Data'] == data_selecionada].copy() if (not df_d_orig.empty and data_selecionada) else pd.DataFrame()
 
     saldo_banco_declarado = round(mapa_saldos_banco.get(data_selecionada, 0.0), 2) if data_selecionada else 0.0
     saldo_oficial_boletim = round(mapa_saldos_theos.get(data_selecionada, 0.0), 2) if data_selecionada else 0.0
@@ -501,15 +518,13 @@ if not eh_poupanca and st.session_state[chave_store_banco] and st.session_state[
     col_s2.metric("🏦 Saldo Extrato Sicoob", f"R$ {saldo_banco_declarado:,.2f}")
     col_s3.metric("⛪ Saldo Boletim Theos", f"R$ {saldo_oficial_boletim:,.2f}")
     
-    if abs(diferenca_visual) < 0.05:
-        col_s4.metric("🎯 Alinhamento de Saldos", "✅ 100% FECHADO", delta="Pronto")
-    else:
-        col_s4.metric("🎯 Alinhamento de Saldos", "⚠️ CONFERIR AJUSTES", delta=f"Dif: R$ {diferenca_visual:,.2f}", delta_color="inverse")
+    if abs(diferenca_visual) < 0.05: col_s4.metric("🎯 Alinhamento de Saldos", "✅ 100% FECHADO", delta="Pronto")
+    else: col_s4.metric("🎯 Alinhamento de Saldos", "⚠️ CONFERIR AJUSTES", delta=f"Dif: R$ {diferenca_visual:,.2f}", delta_color="inverse")
 
     aba_conciliacao, aba_cartoes = st.tabs(["🔄 Esteira de Conciliação Diária", "📊 Visualizador Isolado de Planilhas (Suporte)"])
 
     with aba_conciliacao:
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         with col1:
             st.markdown(f"<div class='titulo-coluna'>📊 Extrato Sicoob ({data_selecionada})</div>", unsafe_allow_html=True)
             if df_banco_dia.empty: st.info("Nenhum registro para esta data.")
@@ -522,11 +537,17 @@ if not eh_poupanca and st.session_state[chave_store_banco] and st.session_state[
             else:
                 for idx, r in df_sistema_dia.iterrows():
                     st.checkbox(f"{r['Tipo']} | {r['Descrição']} | **R$ {r['Valor']:,.2f}**", key=f"chk_{r['id']}")
+        with col3:
+            st.markdown(f"<div class='titulo-coluna-dizimo'>🙏 Conferência Dízimo ({data_selecionada})</div>", unsafe_allow_html=True)
+            if df_dizimo_dia.empty: st.info("Nenhum lançamento de dízimo para esta data.")
+            else:
+                st.markdown(f"<div class='caixa-soma'>Soma Dízimo: R$ {df_dizimo_dia['Valor'].sum():,.2f}</div>", unsafe_allow_html=True)
+                for idx, r in df_dizimo_dia.iterrows():
+                    st.caption(f"👤 {r['Descrição']} | **R$ {r['Valor']:,.2f}**")
 
     with aba_cartoes:
         st.markdown(f"### 📋 Lançamentos Relativos das Planilhas - Data Base: `{data_selecionada}`")
-        c_v1, c_v2, c_v3 = st.columns(3)
-        
+        c_v1, c_v2 = st.columns(2)
         with c_v1:
             st.markdown("<div class='titulo-coluna-sipag'>💳 Movimentação Cartão SIPAG</div>", unsafe_allow_html=True)
             if df_sipag_isolado.empty: st.info("Nenhum dado carregado.")
@@ -536,7 +557,6 @@ if not eh_poupanca and st.session_state[chave_store_banco] and st.session_state[
                 else:
                     st.markdown(f"<div class='caixa-soma'>Soma Líquida do Dia: R$ {df_sipag_dia['Valor Líquido'].sum():,.2f}</div>", unsafe_allow_html=True)
                     st.dataframe(df_sipag_dia[["Valor Bruto", "Desconto", "Valor Líquido", "Centro de Custo"]], hide_index=True, use_container_width=True)
-                    
         with c_v2:
             st.markdown("<div class='titulo-coluna-campanha'>🎁 Lançamentos Cartão Campanha</div>", unsafe_allow_html=True)
             if df_campanha_isolado.empty: st.info("Nenhum dado carregado.")
@@ -546,69 +566,6 @@ if not eh_poupanca and st.session_state[chave_store_banco] and st.session_state[
                 else:
                     st.markdown(f"<div class='caixa-soma'>Soma Líquida do Dia: R$ {df_campanha_dia['Valor Líquido'].sum():,.2f}</div>", unsafe_allow_html=True)
                     st.dataframe(df_campanha_dia[["Valor Bruto", "Desconto", "Valor Líquido", "Centro de Custo"]], hide_index=True, use_container_width=True)
-
-        with c_v3:
-            st.markdown("<div class='titulo-coluna'>⛪ Conferência de Dízimo Auxiliar</div>", unsafe_allow_html=True)
-            if df_dizimo_isolado.empty: st.info("Nenhum arquivo anexado no topo.")
-            else:
-                df_dizimo_dia = df_dizimo_isolado[df_dizimo_isolado["Data"] == data_selecionada]
-                if df_dizimo_dia.empty: st.warning(f"Sem dados para {data_selecionada}.")
-                else:
-                    st.markdown(f"<div class='caixa-soma'>Total Dízimo Coletado: R$ {df_dizimo_dia['Valor Líquido'].sum():,.2f}</div>", unsafe_allow_html=True)
-                    st.dataframe(df_dizimo_dia[["Valor Bruto", "Desconto", "Valor Líquido", "Centro de Custo"]], hide_index=True, use_container_width=True)
-
-# =========================================================================
-# ⚙️ PARSER EXCLUSIVO E ESTRUTURA PARA EXTRATO PDF DE POUPANÇA
-# =========================================================================
-def extrair_dados_pdf_poupanca(arquivo_bytes):
-    try: import pypdf
-    except ImportError: return []
-    leitor = pypdf.PdfReader(io.BytesIO(arquivo_bytes))
-    registros = []
-    padrao_linha = re.compile(r'(\d{2}/\d{2}/\d{4})\s+(.+?)\s+([\d.,]+[CD])')
-    for pagina in leitor.pages:
-        texto = pagina.extract_text()
-        if not texto: continue
-        for linha in texto.replace('\n ', ' ').replace(' \n', ' ').split('\n'):
-            linha = linha.strip()
-            match = padrao_linha.search(linha)
-            if match:
-                data_f = match.group(1)
-                descricao = match.group(2).strip().upper()
-                valor_raw = match.group(3).strip().upper()
-                tipo_sinal = 'C' if 'C' in valor_raw else 'D'
-                num_limpo = re.sub(r'[^\d,.]', '', valor_raw).replace('.', '').replace(',', '.')
-                try: registros.append({'Data': data_f, 'Descrição': descricao, 'Valor': float(num_limpo), 'Sinal': tipo_sinal})
-                except: pass
-    return registros
-
-if eh_poupanca and st.session_state[chave_store_banco]:
-    dados_poupanca = extrair_dados_pdf_poupanca(st.session_state[chave_store_banco])
-    if dados_poupanca:
-        df_poup = pd.DataFrame(dados_poupanca)
-        lista_datas = sorted(list(df_poup['Data'].unique()), key=lambda x: pd.to_datetime(x, dayfirst=True))
-        with st.sidebar: data_selecionada = st.selectbox("Selecione o dia para conferência:", lista_datas)
-        df_dia = df_poup[df_poup['Data'] == data_selecionada]
-        
-        soma_pix = df_dia[(df_dia['Descrição'].isin(["PIX RECEBIDO-OUTRA IF", "CRÉDITO TRANSF. CC", "CRED TRF CC INTERCRE"])) & (df_dia['Sinal'] == 'C')]['Valor'].sum()
-        soma_selic = df_dia[(df_dia['Descrição'].isin(["CORREÇÃO MONETÁRIA - SELIC", "JUROS - SELIC", "JUROS SELIC"])) & (df_dia['Sinal'] == 'C')]['Valor'].sum()
-        df_retiradas = df_dia[df_dia['Sinal'] == 'D']
-        
-        st.markdown(f"---")
-        st.markdown(f"### 📊 Relatório Poupança — Período: `{data_selecionada}`")
-        c_k1, c_k2, c_k3 = st.columns(3)
-        c_k1.metric("🟢 PIX & Transferências Recebidas (C)", f"R$ {soma_pix:,.2f}")
-        c_k2.metric("📈 Correção & Juros SELIC", f"R$ {soma_selic:,.2f}")
-        c_k3.metric("🔴 Retiradas Identificadas (D)", f"R$ {df_retiradas['Valor'].sum():,.2f}")
-        
-        col_t1, col_t2 = st.columns([2, 1])
-        with col_t1:
-            st.markdown("<div class='titulo-coluna'>📥 Extrato de Entradas Detalhado (C)</div>", unsafe_allow_html=True)
-            st.dataframe(df_dia[df_dia['Sinal'] == 'C'][['Descrição', 'Valor']], use_container_width=True, hide_index=True)
-        with col_t2:
-            st.markdown("<div class='titulo-coluna-igreja'>📤 Alerta de Retiradas de Conta (D)</div>", unsafe_allow_html=True)
-            if df_retiradas.empty: st.info("Tudo certo! Nenhuma movimentação de saída (D) nesta data.")
-            else: st.dataframe(df_retiradas[['Descrição', 'Valor']], use_container_width=True, hide_index=True)
 
 elif not st.session_state[chave_store_banco] and not eh_poupanca:
     st.info("Por favor, certifique-se de carregar os arquivos base acima para iniciar os trabalhos de conciliação.")
